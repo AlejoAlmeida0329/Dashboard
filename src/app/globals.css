@@ -128,3 +128,25 @@
     @apply font-sans;
   }
 }
+
+/*
+ * Presenter mode (Modo Presentación).
+ *
+ * Activated by the URL query param `?presenter=1`, which the
+ * <PresenterFrame> client wrapper writes onto the layout root as
+ * `data-presenter="on"`. CSS scoped to that attribute:
+ *
+ *   - Grows base typography ~15% so the projected dashboard reads
+ *     comfortably from a meeting room across the table.
+ *   - Hides any element marked `data-presenter-hide` (filters, tab
+ *     nav, logout link) so the audience sees only the data, not the
+ *     internal controls. The presenter toggle itself is the only
+ *     control left on screen so the operator can switch back.
+ */
+[data-presenter="on"] {
+  font-size: 1.15em;
+}
+
+[data-presenter="on"] [data-presenter-hide] {
+  display: none !important;
+}
