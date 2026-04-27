@@ -155,56 +155,63 @@ Excluidos explícitamente. Documentados para evitar scope creep.
 
 ## Traceability
 
-Qué fase cubre cada requirement. Esta tabla es poblada por `/gsd:create-roadmap`.
+Qué fase cubre cada requirement.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CROSS-01 | TBD | Pending |
-| CROSS-02 | TBD | Pending |
-| CROSS-03 | TBD | Pending |
-| CROSS-04 | TBD | Pending |
-| CROSS-05 | TBD | Pending |
-| CROSS-06 | TBD | Pending |
-| AUTH-01 | TBD | Pending |
-| AUTH-02 | TBD | Pending |
-| AUTH-03 | TBD | Pending |
-| INFRA-01 | TBD | Pending |
-| INFRA-02 | TBD | Pending |
-| INFRA-03 | TBD | Pending |
-| INFRA-04 | TBD | Pending |
-| INI-01 | TBD | Pending |
-| INI-02 | TBD | Pending |
-| INI-03 | TBD | Pending |
-| INI-04 | TBD | Pending |
-| INI-05 | TBD | Pending |
-| INI-06 | TBD | Pending |
-| INI-07 | TBD | Pending |
-| BON-01 | TBD | Pending |
-| BON-02 | TBD | Pending |
-| BON-03 | TBD | Pending |
-| BON-04 | TBD | Pending |
-| BON-05 | TBD | Pending |
-| REC-01 | TBD | Pending |
-| REC-02 | TBD | Pending |
-| REC-03 | TBD | Pending |
-| PAY-01 | TBD | Pending |
-| PAY-02 | TBD | Pending |
-| PAY-03 | TBD | Pending |
-| PAY-04 | TBD | Pending |
-| PAY-05 | TBD | Pending |
-| CLI-01 | TBD | Pending |
-| CLI-02 | TBD | Pending |
-| CLI-03 | TBD | Pending |
-| CLI-04 | TBD | Pending |
-| CLI-05 | TBD | Pending |
-| CLI-06 | TBD | Pending |
-| CLI-07 | TBD | Pending |
-| CLI-08 | TBD | Pending |
+| CROSS-01 | Phase 1 | Pending |
+| CROSS-02 | Phase 1 | Pending |
+| CROSS-03 | Phase 1 | Pending |
+| CROSS-04 | Phase 1 | Pending |
+| CROSS-05 | Phase 1 | Pending |
+| CROSS-06 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| INFRA-01 | Phase 1 | Pending |
+| INFRA-02 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Pending |
+| INFRA-04 | Phase 5 | Pending |
+| INI-01 | Phase 4 | Pending |
+| INI-02 | Phase 4 | Pending |
+| INI-03 | Phase 4 | Pending |
+| INI-04 | Phase 4 | Pending |
+| INI-05 | Phase 4 | Pending |
+| INI-06 | Phase 4 | Pending |
+| INI-07 | Phase 4 | Pending |
+| BON-01 | Phase 2 | Pending |
+| BON-02 | Phase 2 | Pending |
+| BON-03 | Phase 2 | Pending |
+| BON-04 | Phase 2 | Pending |
+| BON-05 | Phase 2 | Pending |
+| REC-01 | Phase 4 | Pending |
+| REC-02 | Phase 4 | Pending |
+| REC-03 | Phase 4 | Pending |
+| PAY-01 | Phase 3 | Pending |
+| PAY-02 | Phase 3 | Pending |
+| PAY-03 | Phase 3 | Pending |
+| PAY-04 | Phase 3 | Pending |
+| PAY-05 | Phase 3 | Pending |
+| CLI-01 | Phase 5 | Pending |
+| CLI-02 | Phase 5 | Pending |
+| CLI-03 | Phase 5 | Pending |
+| CLI-04 | Phase 5 | Pending |
+| CLI-05 | Phase 5 | Pending |
+| CLI-06 | Phase 5 | Pending |
+| CLI-07 | Phase 5 | Pending |
+| CLI-08 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 41 total
-- Mapped to phases: 0 (pendiente — generado por `/gsd:create-roadmap`)
-- Unmapped: 41 ⚠️ (esperado en este punto)
+- Mapped to phases: 41
+- Unmapped: 0 ✓
+
+**Distribución por fase:**
+- Phase 1 (Foundation): 12 reqs (AUTH, INFRA-01/02/03, CROSS)
+- Phase 2 (Bonos): 5 reqs (BON)
+- Phase 3 (Payouts): 5 reqs (PAY)
+- Phase 4 (Inicio + Recargas): 10 reqs (INI, REC)
+- Phase 5 (Clientes + Domain): 9 reqs (CLI, INFRA-04)
 
 ## Notes on Data Assumptions
 
@@ -217,4 +224,4 @@ Estas suposiciones se hicieron al definir requirements. Si una resulta falsa al 
 
 ---
 *Requirements defined: 2026-04-27*
-*Last updated: 2026-04-27 after initial definition*
+*Last updated: 2026-04-27 after roadmap mapping (41/41 mapped)*
