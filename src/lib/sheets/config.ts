@@ -1,9 +1,11 @@
 /**
  * Central configuration for Google Sheets sources.
  *
- * Tab names ('Transacciones', 'Payouts') and ranges are tentative — Plan 04
- * production smoke will confirm against the live Sheets. If they fail, ajustar
- * aquí en una sola línea (no hace falta tocar el adapter).
+ * Tab names confirmed in Plan 04: 'BD_Plataforma' (transactions) and
+ * 'BD_Payouts' (payouts). Both tabs live in the SAME spreadsheet, so the
+ * env vars `GOOGLE_SHEETS_TRANSACTIONS_ID` and `GOOGLE_SHEETS_PAYOUTS_ID`
+ * are typically set to the same Sheet ID (kept separate so Phase 3+ can
+ * split them across sheets if needed without code changes).
  *
  * Env vars are read at module-evaluation time, but the values default to ''
  * to avoid throwing at import. The validation that creds are present happens
@@ -13,11 +15,11 @@
 export const SPREADSHEETS = {
   transactions: {
     id: process.env.GOOGLE_SHEETS_TRANSACTIONS_ID ?? "",
-    range: "Transacciones!A1:Z",
+    range: "BD_Plataforma!A1:Z",
   },
   payouts: {
     id: process.env.GOOGLE_SHEETS_PAYOUTS_ID ?? "",
-    range: "Payouts!A1:Z",
+    range: "BD_Payouts!A1:Z",
   },
 } as const;
 
