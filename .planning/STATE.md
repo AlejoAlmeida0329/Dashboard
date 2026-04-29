@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-04-27)
 
 **Core value:** Una sola URL donde el equipo de Tikin ve métricas frescas del negocio sin abrir Sheets, presentable cuando se proyecta a clientes.
-**Current focus:** Phase 1 — Foundation
+**Current focus:** Phase 2 — Bonos
 
 ## Current Position
 
-Phase: 1 of 5 (Foundation) — **COMPLETE**
-Plan: 4 of 4 (Vercel Deploy + Production Smoke) — completed
-Status: Phase 1 done. **Production live at https://project-dashboard-bkwmin189.vercel.app**. Ready for Phase 2 planning.
-Last activity: 2026-04-29 — Completed 01-04-PLAN.md (Vercel deploy + production smoke + real Sheet headers captured)
+Phase: 2 of 5 (Bonos) — in progress
+Plan: 1 of 4 (Schemas Rewrite) — completed
+Status: Schema mismatch blocker closed. `/api/smoke` green against production (count=3188, skipped=44, 1.36%). Ready for Plan 02-02 (Bonos tab UI).
+Last activity: 2026-04-29 — Completed 02-01-PLAN.md (rewrote domain schema to real BD_Plataforma headers; transaction_type/direction/status enums grounded in live data; empresa_id default = tikintag)
 
-Progress (Phase 1 plans): ██████████ 100% (4/4)
+Progress (all plans, total 5+4+...): █░░░░░░░░░ 5/? (Phase 1 done 4/4; Phase 2 in progress 1/4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: ~14m
-- Total execution time: ~57m (over 3 calendar days due to user_setup gates)
+- Total execution time: ~68m (over 3 calendar days due to user_setup gates)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 4/4 | ~57m | ~14m |
+| 02-bonos | 1/4 | ~11m | ~11m |
 
 **Recent Trend:**
-- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup)
-- Trend: 01-04 longer due to external-service setup checkpoints (GCP service account creation + Sheets API enable propagation + Vercel Marketplace Upstash). Future deploy plans should be faster (project + integrations already linked).
+- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s)
+- Trend: 02-01 came in at ~11m despite a Rule-1 deviation (vfp range bug) and 2 production deploys. Plan 1's architectural seam (header-name lookup + Zod parse-and-skip) made the rewrite cheap — the adapter (transactions.ts) didn't need a single change.
 
 ## Accumulated Context
 
@@ -59,6 +60,12 @@ Recent decisions affecting current work:
 - Plan 01-04 (2026-04-29): Sheets config tab names corrected from tentative `Transacciones`/`Payouts` to real `BD_Plataforma`/`BD_Payouts`. Both data sources live in ONE Sheet ID (`1X0o...QObA`), separated by tabs.
 - Plan 01-04 (2026-04-29): Real BD_Plataforma headers (23 cols) and BD_Payouts headers (15 cols) captured live. Documented verbatim in 01-04-SUMMARY.md. Schema in `src/lib/domain/schemas.ts` is now KNOWN-MISMATCHED — Phase 2's first task is rewriting it.
 - Plan 01-04 (2026-04-29): Vercel CLI's `vercel integration add` overwrote `.env.local` mid-flow, deleting 8 secrets. Recovery via Anthropic chat history (orchestrator only — agents don't have this fallback). Forward guidance: any future plan that runs Marketplace integrations should pull or back up `.env.local` first.
+- Plan 02-01 (2026-04-29): Domain `Transaction` interface rewritten to match real BD_Plataforma. Fields: id (from transaction_id), fecha (from created_at), monto, grossAmount, comision (= total_transaction_fee), fixedFee, variableFeePct (0..1 fraction), tipo, direction, status, empresa_id, empresa_nombre, tikintag, accountId, reference?, destination_type?. `transactions.ts` adapter unchanged — Phase 1's pipeline is genuinely Sheet-shape-independent.
+- Plan 02-01 (2026-04-29): TransactionType enum derived from live data (11 values + OTRO fallback): BONUS, CREDIT_ADJUSTMENT, FEE, P2P, PAYIN_PSE, PAYIN_TRANSFER, PAYOUT_BANK, PURCHASE, REFUND, TREASURY, UKNOWN. "UKNOWN" preserved verbatim (sic — typo in production data). TransactionDirection: in/out. TransactionStatus: completed/rejected.
+- Plan 02-01 (2026-04-29): empresa_id default = tikintag (e.g. `$mario`, `$tikincol`, `$liftit-app`-shaped handles). Override to account_id is a 2-line edit confined to `src/lib/domain/schemas.ts` transform. tikintag chosen over account_id because it's human-readable and aligns with Tikin's existing addressing scheme; account_id (UUID) would force a separate display lookup that doesn't exist in BD_Plataforma yet. Phase 5 (Clientes) is the natural place to add a tikintag → empresa display-name mapping if needed.
+- Plan 02-01 (2026-04-29): variable_fee_percentage stored in Sheet as whole percent (0..100), confirmed live via /api/diagnose: range 0..4.76, samples [0, 3.5, 3.99, 4.56, 4.76]. Schema accepts up to 100 and divides by 100 in transform. The `Transaction.variableFeePct` contract is fraction-only (0..1) so consumers do `monto * variableFeePct` directly. Caught as Rule-1 bug after first smoke run showed 45% skip rate; fix dropped skip rate to 1.36%.
+- Plan 02-01 (2026-04-29): Diagnostic-then-cleanup pattern. Temporary `_diagnose.ts` + `/api/diagnose` route created mid-plan to capture distinct enum values from production before writing schema; deleted before final commit. Production never carried inspection-only code. Single commit shows only the rewrite + cleanup state.
+- Plan 02-01 (2026-04-29): /api/smoke verified green against production (count=3188, skipped=44, 1.36%). 3188 + 44 = 3232 matches the row count from 01-04-SUMMARY.md exactly. Remaining 44 skips are rows with empty transaction_id (genuinely malformed).
 
 ### Pending Todos
 
@@ -67,16 +74,20 @@ None yet.
 ### Blockers/Concerns
 
 - **Vercel Deployment Protection ENABLED by default** — production URL requires Vercel SSO. For client demos (per PROJECT.md primary use case) USER must disable: https://vercel.com/alejandro-almeidas-projects-5f343d98/project-dashboard/settings/deployment-protection → Vercel Authentication → Disabled. Or wait for Phase 5 (custom domain `dashboard.tikin.co`) which can route public.
-- **Schema mismatch in `src/lib/domain/schemas.ts`** — Plan 04 captured real headers; current schemas use tentative names. Phase 2 first task: rewrite schemas to match actual BD_Plataforma columns (`tikintag`, `account_id`, `transaction_id`, `created_at`, `transaction_type`, `status`, `amount`, etc.). Live `/api/smoke` will fail with a clear "schema mismatch" error until then — that's expected behavior, not a bug.
-- **Empresa identity column ambiguous** — BD_Plataforma has no explicit `empresa_id` or `empresa_nombre`. Phase 2 must ask user whether `tikintag`, `account_id`, or another column represents the corporate client of Tikin (vs. an end-user account).
-- **3 v2 features now v1-eligible** — REC-V2-01 (Recargas success rate), PAY-V2-01 (Payouts success rate), PAY-V2-02 (Payouts failure breakdown). The data exists today (`status` in BD_Plataforma, `State` + `Failure Reason` in BD_Payouts). REQUIREMENTS.md should be updated by Phase 2 or a small docs phase.
+- **3 v2 features now v1-eligible** — REC-V2-01 (Recargas success rate), PAY-V2-01 (Payouts success rate), PAY-V2-02 (Payouts failure breakdown). The data exists today (`status` in BD_Plataforma confirmed `completed`/`rejected` live; `State` + `Failure Reason` in BD_Payouts captured by 01-04). REQUIREMENTS.md should be updated by Phase 2 or a small docs phase.
 - **GCP service account key NOT rotated** — `private_key_id 71dd502c55f4859096a2a5073dd23bdceecc4459` was leaked in chat history during Plan 04 setup. SA scope: Viewer on one Sheet only. User accepted to ship Phase 1; rotation procedure documented in 01-04-SUMMARY.md → Security Debt #1.
 - **Password is `T1k1N` (5 chars)** — user-accepted. Mitigations: bcrypt cost 10 + Upstash sliding-window rate limit (5/5min/IP active in production). Rotation procedure documented in 01-04-SUMMARY.md → Security Debt #2.
 - **Env vars only in Vercel `Production` target** — preview + development environments lack the 8 user vars (auth + GCP + Sheets). Future preview deploys will fail. Resolution procedure (loop over vars adding to preview + development) documented in 01-04-SUMMARY.md → Security Debt #3.
-- **EmpresaFilter list is empty** — Phase 1 ships with `empresas={[]}`. Phase 2 (Bonos) will compute the empresa registry once schemas are rewritten and the empresa identity column is decided.
+- **EmpresaFilter list is empty** — Phase 1 ships with `empresas={[]}`. Plan 02-02 will compute the unique empresa registry from `getTransactions()` rows (using `Transaction.empresa_id`/`Transaction.empresa_nombre`, default = tikintag). Schema is now ready (closes the prior "empresa identity ambiguous" concern); only the UI-side wiring remains.
+- **TransactionType.UKNOWN is a real value in production data** (sic — typo). Schema preserves it verbatim rather than silently mapping to OTRO so the data-quality issue stays visible in dashboards. User owns source-side cleanup at the Sheet.
+- **Same tikintag may map to multiple wallets per empresa** — e.g. Liftit might have a corporate `$liftit-app` wallet and individual employee wallets with different tikintags. Today they appear as separate "empresas" in the dashboard. Phase 5 (Clientes/Domain) is the natural place to introduce a many-to-one tikintag → empresa display-name mapping if Tikin confirms that's needed.
+
+**Resolved this session:**
+- ~~Schema mismatch in `src/lib/domain/schemas.ts`~~ — closed by Plan 02-01. /api/smoke green: count=3188, skipped=44.
+- ~~Empresa identity column ambiguous~~ — decided in Plan 02-01: default = tikintag (override is 2-line edit in schemas.ts).
 
 ## Session Continuity
 
-Last session: 2026-04-29 16:54 UTC
-Stopped at: Completed 01-04-PLAN.md (Vercel deploy + production smoke). Phase 1 100% complete. 4 atomic commits across plans 01-04. Production live at https://project-dashboard-bkwmin189.vercel.app behind Vercel Deployment Protection. Ready for Phase 2 planning.
+Last session: 2026-04-29 21:44 UTC
+Stopped at: Completed 02-01-PLAN.md (schemas rewrite to real BD_Plataforma headers). Phase 2 in progress (1/4). /api/smoke verde contra producción (count=3188, skipped=44, 1.36%). Latest production deploy: https://project-dashboard-44v5hovqa.vercel.app. Domain types are now grounded in live data — Plans 02-02 through 02-04 can consume Transaction/TransactionType/TransactionStatus with confidence.
 Resume file: None
