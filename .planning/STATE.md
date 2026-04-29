@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-04-27)
 ## Current Position
 
 Phase: 2 of 5 (Bonos) — in progress
-Plan: 2 of 4 (Bonos Domain + Empresa Registry) — completed
-Status: Bonos domain library + empresa registry shipped. Production verified — EmpresaFilter dropdown contains 233 unique empresas (was empty in Phase 1). DashboardHeader async, deduping Sheet reads via React cache. Ready for Plan 02-03 (Bonos UI components).
-Last activity: 2026-04-29 — Completed 02-02-PLAN.md (bonos.ts with 5 pure functions, empresas.ts registry, getCachedTransactions, async DashboardHeader)
+Plan: 3 of 4 (Bonos UI components) — completed
+Status: 4 visual leaves shipped (BonosChart, Leaderboard, KPICards, SalesTable). recharts ^2.15.4 installed as project chart library. Modo Presentación contract declarative via data-presenter-hide on 2 Card wrappers + 4 table cells. All numerics through format.ts (single Intl gate respected — verified by grep). Ready for Plan 02-04 (Bonos page composition: parseFilters → getCachedTransactions → filterBonos → 4 aggregations → 4 components).
+Last activity: 2026-04-29 — Completed 02-03-PLAN.md (4 components in src/components/bonos/, recharts installed, presenter-hide contract emitted)
 
-Progress (all plans, total 5+4+...): ██░░░░░░░░ 6/? (Phase 1 done 4/4; Phase 2 in progress 2/4)
+Progress (all plans, total 5+4+...): ██░░░░░░░░ 7/? (Phase 1 done 4/4; Phase 2 in progress 3/4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: ~13m
-- Total execution time: ~77m (over 3 calendar days due to user_setup gates)
+- Total plans completed: 7
+- Average duration: ~12m
+- Total execution time: ~80m (over 3 calendar days due to user_setup gates)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 4/4 | ~57m | ~14m |
-| 02-bonos | 2/4 | ~20m | ~10m |
+| 02-bonos | 3/4 | ~23m | ~8m |
 
 **Recent Trend:**
-- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s), 02-02 (8m 35s)
-- Trend: 02-02 was the fastest plan in Phase 2 — zero deviations beyond a minor sort-collator refinement, single production deploy, all verifications green on first try. The Phase 1 architectural seams continue to pay off: bonos.ts/empresas.ts as pure modules cost nothing to wire (no server-only/Next deps), and `cache(getTransactions)` is a 1-line addition to the existing adapter.
+- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s), 02-02 (8m 35s), 02-03 (3m 14s)
+- Trend: 02-03 was the fastest plan executed yet (3m 14s) — pure UI leaf composition with no domain or infra surprises. Two micro Rule-1 fixes (redundant `$` prefix, unformatted count) caught at code-write time, not at build/lint. The recharts install (32 transitive packages) was the only "external" cost; React 19 compat was clean on first try. Phase 1's single Intl gate continues to absorb every numeric path without code-level Intl.NumberFormat appearing anywhere new.
 
 ## Accumulated Context
 
@@ -75,6 +75,13 @@ Recent decisions affecting current work:
 - Plan 02-02 (2026-04-29): `DashboardHeader` is now async. Reads transactions, computes empresa registry via `getEmpresaRegistry`, passes real `EmpresaOption[]` to `<EmpresaFilter>`. Try/catch around the read → on Sheet failure the dropdown renders empty (Phase 1 behavior) and the error surfaces on the data-bearing page; chrome never breaks.
 - Plan 02-02 (2026-04-29): Empresa registry sort uses `Intl.Collator('es', { sensitivity: 'base', numeric: true })`. The `numeric: true` is key for tikintags shaped like `$1anderson`/`$11john` — orders numeric segments as numbers, not lexically. Plan said `localeCompare(b.nombre, 'es')`; Rule-1 refinement because plain localeCompare would order `$1` < `$11` < `$2`. Documented as deviation in 02-02-SUMMARY.md.
 - Plan 02-02 (2026-04-29): Production verification — /inicio HTTP 200, dropdown shows 234 options (1 default + 233 real empresas, alphabetical es-collated), `?empresa=$mario` correctly renders selected. /bonos same 234 options (header is shared). /api/smoke still ok=true count=3188 skipped=44.
+- Plan 02-03 (2026-04-29): Chart library = recharts ^2.15.4. Selected over nivo (loads d3 entirely → bundle inflation), visx (primitives kit, not chart lib → time cost), raw SVG (no axes/tooltip/responsive for free). React 19 compatible cleanly. Override path documented: BonosChart.tsx is a self-contained leaf — swap recharts→nivo or recharts→visx by editing only that file. No override happened during execution; recharts compiled clean on first try.
+- Plan 02-03 (2026-04-29): BonosChart is the ONLY 'use client' component of the Bonos UI. Recharts ResponsiveContainer needs DOM (window resize listener). Leaderboard, KPICards, SalesTable are pure Server Components — zero hydration cost, static HTML on those leaves. Pattern reusable for Phase 3+ (Recargas trend, Payouts trend, Inicio mini-charts).
+- Plan 02-03 (2026-04-29): Chart line uses `stroke="currentColor"` not a hardcoded hex. The wrapping page sets `text-{token}` and the line follows. Theme switches don't touch the chart; light/dark works without conditional logic. Same pattern reusable for future trend charts.
+- Plan 02-03 (2026-04-29): BonosChart does NOT carry `data-presenter-hide`. The chart is the heroína — visible in BOTH internal AND presenter views. Modo Presentación + filtro empresa transforms the tab into a "vista 1-cliente" by reshaping the data feed, NOT by hiding the chart. The "cliente sees only their data" contract comes from the URL filter (Plan 04 wires it), not from visibility toggles here.
+- Plan 02-03 (2026-04-29): KPI Ticket promedio is ALWAYS visible (both internal + presenter). Only Comisión total carries `data-presenter-hide`. Matches roadmap Success Criteria 4 and 02-CONTEXT.md vision (cliente needs to see "what's our average sale" of their own data; revenue/comisión stays internal-only).
+- Plan 02-03 (2026-04-29): SalesTable hides th + every td of the last 2 cols ($ comisión, % del total). CSS `display: none` on `display:table-cell` works per-cell — browser table layout absorbs freed space across remaining cols. No explicit width recalculation needed in the component. Plan 04 will visually confirm the table doesn't shift jaggedly during the mode transition; if it does, the fix is `<col>` widths inside SalesTable (5-line addition).
+- Plan 02-03 (2026-04-29): Two Rule-1 micro-fixes during Task 3 — (a) removed redundant `$` prefix in `Sobre {formatCOP(...)} vendidos` (formatCOP already prepends '$ ', double-dollar would have rendered); (b) replaced bare `${summary.count}` with `formatInteger(summary.count)` (3000+ counts need thousands grouping per Colombian convention). Both documented in 02-03-SUMMARY.md "Deviations" so the patterns don't recur in future plans.
 
 ### Pending Todos
 
@@ -98,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-29 21:58 UTC
-Stopped at: Completed 02-02-PLAN.md (bonos.ts + empresas.ts + getCachedTransactions + async DashboardHeader). Phase 2 in progress (2/4). EmpresaFilter dropdown live with 233 unique empresas. Latest production deploy: https://project-dashboard-kz1v4pfzy.vercel.app. Plans 02-03 (Bonos UI components) and 02-04 (Bonos page) can now consume `filterBonos` + `summarizeBonos` + `aggregateBonosByDate` + `aggregateBonosByEmpresa` + `top10Empresas` with stable output types (`BonoSummary`, `BonoByDate`, `BonoByEmpresa`).
+Last session: 2026-04-29 22:07 UTC
+Stopped at: Completed 02-03-PLAN.md (4 visual leaves in src/components/bonos/, recharts ^2.15.4 installed, declarative presenter-hide contract emitted). Phase 2 in progress (3/4). All numerics flow through format.ts (single Intl gate verified by grep). Plan 02-04 (Bonos page composition) is the remaining work for Phase 2 — it parses URL filters, fetches via getCachedTransactions, runs filterBonos + 4 aggregations, and feeds the 4 components. After Plan 04 ships and is production-verified, Phase 2 closes and Phase 3 (Payouts) can start with the recharts pattern, presenter-hide pattern, and Server-Component-default leaf shape established here.
 Resume file: None
