@@ -9,30 +9,30 @@ See: .planning/PROJECT.md (updated 2026-04-27)
 
 ## Current Position
 
-Phase: 2 of 5 (Bonos) — in progress
-Plan: 3 of 4 (Bonos UI components) — completed
-Status: 4 visual leaves shipped (BonosChart, Leaderboard, KPICards, SalesTable). recharts ^2.15.4 installed as project chart library. Modo Presentación contract declarative via data-presenter-hide on 2 Card wrappers + 4 table cells. All numerics through format.ts (single Intl gate respected — verified by grep). Ready for Plan 02-04 (Bonos page composition: parseFilters → getCachedTransactions → filterBonos → 4 aggregations → 4 components).
-Last activity: 2026-04-29 — Completed 02-03-PLAN.md (4 components in src/components/bonos/, recharts installed, presenter-hide contract emitted)
+Phase: 2 of 5 (Bonos) — ✅ COMPLETE
+Plan: 4 of 4 (Bonos page composition) — completed
+Status: Phase 2 ships. /bonos renders live BD_Plataforma data end-to-end. URL filters propagate to KPICards + BonosChart + Leaderboard + SalesTable; presenter mode hides KPI Comisión + Leaderboard + last 2 SalesTable cols declaratively via CSS; empty/error states with Spanish copy. DashboardHeader and the page share one Sheets fetch per request via React `cache()` (no double-fetch verified by page-size coherence in production). The Server-Component-page-composition pattern is locked in for Phases 3-5: parseFilters → getCachedTransactions → filter+aggregate (pure) → render typed leaves. Ready for Phase 3 (Payouts).
+Last activity: 2026-04-29 — Completed 02-04-PLAN.md (page.tsx composes 4 components + 5 domain functions, force-dynamic, production-verified across 16 checks)
 
-Progress (all plans, total 5+4+...): ██░░░░░░░░ 7/? (Phase 1 done 4/4; Phase 2 in progress 3/4)
+Progress (all plans, total 5+4+...): ██░░░░░░░░ 8/? (Phase 1 done 4/4; Phase 2 done 4/4; Phase 3 next)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: ~12m
-- Total execution time: ~80m (over 3 calendar days due to user_setup gates)
+- Total plans completed: 8
+- Average duration: ~11m
+- Total execution time: ~85m (over 3 calendar days due to user_setup gates)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 4/4 | ~57m | ~14m |
-| 02-bonos | 3/4 | ~23m | ~8m |
+| 02-bonos | 4/4 | ~28m | ~7m |
 
 **Recent Trend:**
-- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s), 02-02 (8m 35s), 02-03 (3m 14s)
-- Trend: 02-03 was the fastest plan executed yet (3m 14s) — pure UI leaf composition with no domain or infra surprises. Two micro Rule-1 fixes (redundant `$` prefix, unformatted count) caught at code-write time, not at build/lint. The recharts install (32 transitive packages) was the only "external" cost; React 19 compat was clean on first try. Phase 1's single Intl gate continues to absorb every numeric path without code-level Intl.NumberFormat appearing anywhere new.
+- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s), 02-02 (8m 35s), 02-03 (3m 14s), 02-04 (5m 12s)
+- Trend: Phase 2 averaged ~7m/plan vs Phase 1's ~14m/plan — half the time per plan, with 100% of plans surviving production verification on first deploy. The "pure functions + React `cache()` + force-dynamic page" stack from Plans 02-02/03/04 produces predictable composition with no architectural surprises. The whole phase shipped without a single Rule-2 (missing critical) or Rule-3 (blocker) deviation; only 3 micro Rule-1 fixes total across the phase (variable_fee_percentage range in 02-01, double-`$` + unformatted count in 02-03), all caught at code-write time. Phase 1's single Intl gate continues to absorb every numeric path; zero code-level `Intl.NumberFormat` introductions across Phase 2.
 
 ## Accumulated Context
 
@@ -82,6 +82,15 @@ Recent decisions affecting current work:
 - Plan 02-03 (2026-04-29): KPI Ticket promedio is ALWAYS visible (both internal + presenter). Only Comisión total carries `data-presenter-hide`. Matches roadmap Success Criteria 4 and 02-CONTEXT.md vision (cliente needs to see "what's our average sale" of their own data; revenue/comisión stays internal-only).
 - Plan 02-03 (2026-04-29): SalesTable hides th + every td of the last 2 cols ($ comisión, % del total). CSS `display: none` on `display:table-cell` works per-cell — browser table layout absorbs freed space across remaining cols. No explicit width recalculation needed in the component. Plan 04 will visually confirm the table doesn't shift jaggedly during the mode transition; if it does, the fix is `<col>` widths inside SalesTable (5-line addition).
 - Plan 02-03 (2026-04-29): Two Rule-1 micro-fixes during Task 3 — (a) removed redundant `$` prefix in `Sobre {formatCOP(...)} vendidos` (formatCOP already prepends '$ ', double-dollar would have rendered); (b) replaced bare `${summary.count}` with `formatInteger(summary.count)` (3000+ counts need thousands grouping per Colombian convention). Both documented in 02-03-SUMMARY.md "Deviations" so the patterns don't recur in future plans.
+- Plan 02-04 (2026-04-29): `searchParams: Promise<Record<string, string | string[] | undefined>>` is the canonical Server Component page signature (Next 16). `await searchParams` once at top, then `parseFilters(params)`. Confirmed against `next 16.2.4` in node_modules. All future page.tsx files in this project follow this shape.
+- Plan 02-04 (2026-04-29): `export const dynamic = "force-dynamic"` on data-bearing pages. URL state would explode the cache key across filter combinations and PROJECT.md mandates per-request fresh Sheets reads. ISR / RSC caching is opt-out at the page level. Build output confirms: `ƒ /bonos` (Dynamic). Future Payouts/Recargas/Inicio pages follow the same directive.
+- Plan 02-04 (2026-04-29): Inline error fallback over `error.tsx` boundary for the Sheets fetch failure case. Try/catch around `getCachedTransactions()` returns a `<Card>` with the underlying `err.message` (e.g. "Sheet schema mismatch — columnas faltantes en transactions Sheet: created_at"). The route-group's `error.tsx` stays free for genuine runtime errors.
+- Plan 02-04 (2026-04-29): Empty-state still renders KPICards (zero values). `summarizeBonos([])` returns `{count:0, ticketPromedio:0, comisionTotal:0, montoTotal:0}` (zero-safe by Plan 02-02 contract). Showing `$ 0` cards + a friendly "Sin bonos en el período seleccionado" Card preserves layout consistency and tells the user "your filter is the cause" rather than "something is broken".
+- Plan 02-04 (2026-04-29): Aggregations run AFTER the empty-state guard, not before. `aggregateBonosByDate`, `aggregateBonosByEmpresa`, `top10Empresas` are skipped when the filter excluded everything — saves CPU on the empty-page case. Behavior identical for non-empty cases.
+- Plan 02-04 (2026-04-29): Page does NOT re-fetch the empresa registry. DashboardHeader from Plan 02-02 already calls `getCachedTransactions()` and computes `getEmpresaRegistry`. The page's own `getCachedTransactions()` returns the SAME memoized result via React `cache()` per-request dedup. Verified empirically: page-size progression in production (51k placeholder < 57k empty < 65k 1-empresa < 155k 7d < 264k full) is monotonic with content actually rendered — no double-fetch artifacts.
+- Plan 02-04 (2026-04-29): No `verifySession()` call in the page. The `(protected)/layout.tsx` from Plan 01-04 already guards the entire subtree (and the proxy gate from 01-01 catches it earlier). Re-calling here would be redundant. Future protected pages follow this pattern — auth lives in the layout, never per-page.
+- Plan 02-04 (2026-04-29): Layout grid `lg:grid-cols-[1fr_2fr]` for Leaderboard | SalesTable. The table has 5 columns and visually weighs more; 1:2 ratio prevents the table from looking cramped while keeping the leaderboard readable. Mobile (default) stacks them vertically with `space-y-6`. Pattern reusable for Phases 3-5 wherever a list and a table coexist.
+- Plan 02-04 (2026-04-29): No deviations during execution. Plan's literal code block compiled clean on first build, production deployed clean on first try, all 16 verification checks green. Zero Rule-1/2/3 fixes needed. Phase 2 ships unblocked.
 
 ### Pending Todos
 
@@ -102,9 +111,10 @@ None yet.
 - ~~Schema mismatch in `src/lib/domain/schemas.ts`~~ — closed by Plan 02-01. /api/smoke green: count=3188, skipped=44.
 - ~~Empresa identity column ambiguous~~ — decided in Plan 02-01: default = tikintag (override is 2-line edit in schemas.ts).
 - ~~EmpresaFilter list is empty~~ — closed by Plan 02-02. Production verification: 233 unique empresas in dropdown, Spanish-collated, URL filter works (`?empresa=$mario` selects correctly).
+- ~~/bonos placeholder page~~ — closed by Plan 02-04. /bonos now renders live BD_Plataforma data end-to-end with all filters working, presenter mode visually correct, empty/error states with Spanish copy, no regression on the other 4 tabs.
 
 ## Session Continuity
 
-Last session: 2026-04-29 22:07 UTC
-Stopped at: Completed 02-03-PLAN.md (4 visual leaves in src/components/bonos/, recharts ^2.15.4 installed, declarative presenter-hide contract emitted). Phase 2 in progress (3/4). All numerics flow through format.ts (single Intl gate verified by grep). Plan 02-04 (Bonos page composition) is the remaining work for Phase 2 — it parses URL filters, fetches via getCachedTransactions, runs filterBonos + 4 aggregations, and feeds the 4 components. After Plan 04 ships and is production-verified, Phase 2 closes and Phase 3 (Payouts) can start with the recharts pattern, presenter-hide pattern, and Server-Component-default leaf shape established here.
+Last session: 2026-04-29 22:17 UTC
+Stopped at: ✅ Phase 2 (Bonos) shipped — all 4/4 plans complete, all 5 BON-* requirements covered, all 5 roadmap success criteria verified live in production. Last deploy: https://project-dashboard-qhrwwpfuw.vercel.app (id dpl_8fS54PUX3wufcK5uKabgjM93izMk). 16/16 verification checks passed (smoke, /bonos default, date range, empresa filter, presenter mode, combo presenter+empresa, empty state, no-regression on /inicio /payouts /clientes /recargas, build + lint + tsc clean, page-size coherence confirms no double-fetch). Phase 3 (Payouts) is next — the Server-Component-page-composition skeleton from 02-04 transfers directly: parseFilters → getCachedPayouts (Phase 3 will create) → filterPayouts → aggregations → typed leaves. Same Phase 1 contracts apply (URL state, presenter-mode CSS, format.ts gate, empresa filter via DashboardHeader). Phase 3 also gets the chance to fold in the now-v1-eligible PAY-V2-01 (success rate) and PAY-V2-02 (failure breakdown) — data exists in BD_Payouts (`State` + `Failure Reason`) per 01-04-SUMMARY.md.
 Resume file: None
