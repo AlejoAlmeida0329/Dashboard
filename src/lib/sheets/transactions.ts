@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { getSheetsClient } from "./client";
 import { SPREADSHEETS } from "./config";
 import {
@@ -129,3 +131,36 @@ export async function getTransactions(): Promise<AdapterResult<Transaction>> {
 
   return { rows, skipped, lastReadAt, warnings };
 }
+
+/**
+ * React `cache()`-wrapped variant of `getTransactions` for SAME-REQUEST
+ * deduplication.
+ *
+ * Why: in the Bonos page render, both `DashboardHeader` (fetching the
+ * empresa registry for the filter dropdown) and `app/bonos/page.tsx`
+ * (fetching the bono aggregations) need the full transactions list. We
+ * don't want to hit the Sheets API twice per request — the underlying
+ * data is identical and a single 2-second roundtrip is the worst part
+ * of dashboard latency.
+ *
+ * What `cache()` provides:
+ *   - Same-request memoization across all Server Components in the
+ *     same render tree. Header and page receive the SAME
+ *     `AdapterResult<Transaction>` reference (stable object identity).
+ *   - NO cross-request caching. Each new request re-reads the Sheet —
+ *     dashboard freshness is preserved (per PROJECT.md "Cache / refresh
+ *     diferido — la lectura es en vivo en cada carga").
+ *
+ * Usage rule:
+ *   - Server Components inside the dashboard layout tree: import
+ *     `getCachedTransactions` (this function).
+ *   - Outside-of-render code (route handlers, server actions, scripts):
+ *     import `getTransactions` directly. `cache()` is only meaningful
+ *     during a render and is a no-op outside it.
+ *
+ * Caveat: errors thrown by `getTransactions` are also memoized for the
+ * lifetime of the request — every consumer in the same render sees the
+ * same error. That is the intended behavior (a failed Sheets read is a
+ * full-page failure; no point retrying on the second consumer).
+ */
+export const getCachedTransactions = cache(getTransactions);
