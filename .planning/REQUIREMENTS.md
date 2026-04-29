@@ -159,18 +159,18 @@ Qué fase cubre cada requirement.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CROSS-01 | Phase 1 | Pending |
-| CROSS-02 | Phase 1 | Pending |
-| CROSS-03 | Phase 1 | Pending |
-| CROSS-04 | Phase 1 | Pending |
-| CROSS-05 | Phase 1 | Pending |
-| CROSS-06 | Phase 1 | Pending |
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| INFRA-01 | Phase 1 | Pending |
-| INFRA-02 | Phase 1 | Pending |
-| INFRA-03 | Phase 1 | Pending |
+| CROSS-01 | Phase 1 | Complete |
+| CROSS-02 | Phase 1 | Complete |
+| CROSS-03 | Phase 1 | Complete |
+| CROSS-04 | Phase 1 | Complete |
+| CROSS-05 | Phase 1 | Complete |
+| CROSS-06 | Phase 1 | Complete |
+| AUTH-01 | Phase 1 | Complete |
+| AUTH-02 | Phase 1 | Complete |
+| AUTH-03 | Phase 1 | Complete |
+| INFRA-01 | Phase 1 | Complete |
+| INFRA-02 | Phase 1 | Complete |
+| INFRA-03 | Phase 1 | Complete |
 | INFRA-04 | Phase 5 | Pending |
 | INI-01 | Phase 4 | Pending |
 | INI-02 | Phase 4 | Pending |
