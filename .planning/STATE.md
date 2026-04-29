@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-04-27)
 ## Current Position
 
 Phase: 2 of 5 (Bonos) — in progress
-Plan: 1 of 4 (Schemas Rewrite) — completed
-Status: Schema mismatch blocker closed. `/api/smoke` green against production (count=3188, skipped=44, 1.36%). Ready for Plan 02-02 (Bonos tab UI).
-Last activity: 2026-04-29 — Completed 02-01-PLAN.md (rewrote domain schema to real BD_Plataforma headers; transaction_type/direction/status enums grounded in live data; empresa_id default = tikintag)
+Plan: 2 of 4 (Bonos Domain + Empresa Registry) — completed
+Status: Bonos domain library + empresa registry shipped. Production verified — EmpresaFilter dropdown contains 233 unique empresas (was empty in Phase 1). DashboardHeader async, deduping Sheet reads via React cache. Ready for Plan 02-03 (Bonos UI components).
+Last activity: 2026-04-29 — Completed 02-02-PLAN.md (bonos.ts with 5 pure functions, empresas.ts registry, getCachedTransactions, async DashboardHeader)
 
-Progress (all plans, total 5+4+...): █░░░░░░░░░ 5/? (Phase 1 done 4/4; Phase 2 in progress 1/4)
+Progress (all plans, total 5+4+...): ██░░░░░░░░ 6/? (Phase 1 done 4/4; Phase 2 in progress 2/4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: ~14m
-- Total execution time: ~68m (over 3 calendar days due to user_setup gates)
+- Total plans completed: 6
+- Average duration: ~13m
+- Total execution time: ~77m (over 3 calendar days due to user_setup gates)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-foundation | 4/4 | ~57m | ~14m |
-| 02-bonos | 1/4 | ~11m | ~11m |
+| 02-bonos | 2/4 | ~20m | ~10m |
 
 **Recent Trend:**
-- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s)
-- Trend: 02-01 came in at ~11m despite a Rule-1 deviation (vfp range bug) and 2 production deploys. Plan 1's architectural seam (header-name lookup + Zod parse-and-skip) made the rewrite cheap — the adapter (transactions.ts) didn't need a single change.
+- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s), 02-02 (8m 35s)
+- Trend: 02-02 was the fastest plan in Phase 2 — zero deviations beyond a minor sort-collator refinement, single production deploy, all verifications green on first try. The Phase 1 architectural seams continue to pay off: bonos.ts/empresas.ts as pure modules cost nothing to wire (no server-only/Next deps), and `cache(getTransactions)` is a 1-line addition to the existing adapter.
 
 ## Accumulated Context
 
@@ -66,6 +66,15 @@ Recent decisions affecting current work:
 - Plan 02-01 (2026-04-29): variable_fee_percentage stored in Sheet as whole percent (0..100), confirmed live via /api/diagnose: range 0..4.76, samples [0, 3.5, 3.99, 4.56, 4.76]. Schema accepts up to 100 and divides by 100 in transform. The `Transaction.variableFeePct` contract is fraction-only (0..1) so consumers do `monto * variableFeePct` directly. Caught as Rule-1 bug after first smoke run showed 45% skip rate; fix dropped skip rate to 1.36%.
 - Plan 02-01 (2026-04-29): Diagnostic-then-cleanup pattern. Temporary `_diagnose.ts` + `/api/diagnose` route created mid-plan to capture distinct enum values from production before writing schema; deleted before final commit. Production never carried inspection-only code. Single commit shows only the rewrite + cleanup state.
 - Plan 02-01 (2026-04-29): /api/smoke verified green against production (count=3188, skipped=44, 1.36%). 3188 + 44 = 3232 matches the row count from 01-04-SUMMARY.md exactly. Remaining 44 skips are rows with empty transaction_id (genuinely malformed).
+- Plan 02-02 (2026-04-29): `bonos.ts` is a PURE module — no `next/`, no `server-only`, no `react`. Imports limited to `./types` and `@/lib/url-state` (type-only). Functions: `filterBonos` + `summarizeBonos` + `aggregateBonosByDate` + `aggregateBonosByEmpresa` + `top10Empresas`. Output types `BonoSummary` / `BonoByDate` / `BonoByEmpresa` are stable contracts for Plans 03 and 04 UI consumers.
+- Plan 02-02 (2026-04-29): Default Bonos filter contract = `tipo='BONUS' + direction='in' + status='completed'` + Bogota-anchored from/to + optional empresa. Documented inline in jsdoc and in 02-02-SUMMARY.md "Bonos Filter Contract" so override is explicit. `pending` (if Tikin adds it) falls through to `OTRO_STATUS` and is auto-excluded; types.ts grows when Tikin officially supports the value.
+- Plan 02-02 (2026-04-29): `aggregateBonosByDate` does NOT zero-fill missing days. Bono density is high (~3000 BD_Plataforma rows over ~90 days, BONUS being the largest single tipo) so the chart lib in Plan 03 handles continuous-axis spacing. Zero-fill would also make the dashboard look like the source of truth on "no-sale days" — which it isn't.
+- Plan 02-02 (2026-04-29): `pctDelTotal` is computed against the input passed to `aggregateBonosByEmpresa` (already filtered), not the universe of transactions. Matches "% of bonos in the current view" reading.
+- Plan 02-02 (2026-04-29): Date filter uses literal `${date}T00:00:00-05:00` / `T23:59:59.999-05:00` offsets instead of `new Date(date)`. Closes the silent off-by-one where naked `new Date('2026-04-01')` parses to UTC midnight = 19:00 prev day in Bogotá. Same convention as `url-state.ts`.
+- Plan 02-02 (2026-04-29): `getCachedTransactions = cache(getTransactions)` from React. Same-request memoization (DashboardHeader + page share one Sheets fetch); zero cross-request caching so "lectura en vivo" per PROJECT.md is preserved. Use `getCachedTransactions` from any Server Component in the `(protected)/layout.tsx` render tree; use `getTransactions` from route handlers, server actions, scripts.
+- Plan 02-02 (2026-04-29): `DashboardHeader` is now async. Reads transactions, computes empresa registry via `getEmpresaRegistry`, passes real `EmpresaOption[]` to `<EmpresaFilter>`. Try/catch around the read → on Sheet failure the dropdown renders empty (Phase 1 behavior) and the error surfaces on the data-bearing page; chrome never breaks.
+- Plan 02-02 (2026-04-29): Empresa registry sort uses `Intl.Collator('es', { sensitivity: 'base', numeric: true })`. The `numeric: true` is key for tikintags shaped like `$1anderson`/`$11john` — orders numeric segments as numbers, not lexically. Plan said `localeCompare(b.nombre, 'es')`; Rule-1 refinement because plain localeCompare would order `$1` < `$11` < `$2`. Documented as deviation in 02-02-SUMMARY.md.
+- Plan 02-02 (2026-04-29): Production verification — /inicio HTTP 200, dropdown shows 234 options (1 default + 233 real empresas, alphabetical es-collated), `?empresa=$mario` correctly renders selected. /bonos same 234 options (header is shared). /api/smoke still ok=true count=3188 skipped=44.
 
 ### Pending Todos
 
@@ -78,16 +87,17 @@ None yet.
 - **GCP service account key NOT rotated** — `private_key_id 71dd502c55f4859096a2a5073dd23bdceecc4459` was leaked in chat history during Plan 04 setup. SA scope: Viewer on one Sheet only. User accepted to ship Phase 1; rotation procedure documented in 01-04-SUMMARY.md → Security Debt #1.
 - **Password is `T1k1N` (5 chars)** — user-accepted. Mitigations: bcrypt cost 10 + Upstash sliding-window rate limit (5/5min/IP active in production). Rotation procedure documented in 01-04-SUMMARY.md → Security Debt #2.
 - **Env vars only in Vercel `Production` target** — preview + development environments lack the 8 user vars (auth + GCP + Sheets). Future preview deploys will fail. Resolution procedure (loop over vars adding to preview + development) documented in 01-04-SUMMARY.md → Security Debt #3.
-- **EmpresaFilter list is empty** — Phase 1 ships with `empresas={[]}`. Plan 02-02 will compute the unique empresa registry from `getTransactions()` rows (using `Transaction.empresa_id`/`Transaction.empresa_nombre`, default = tikintag). Schema is now ready (closes the prior "empresa identity ambiguous" concern); only the UI-side wiring remains.
 - **TransactionType.UKNOWN is a real value in production data** (sic — typo). Schema preserves it verbatim rather than silently mapping to OTRO so the data-quality issue stays visible in dashboards. User owns source-side cleanup at the Sheet.
-- **Same tikintag may map to multiple wallets per empresa** — e.g. Liftit might have a corporate `$liftit-app` wallet and individual employee wallets with different tikintags. Today they appear as separate "empresas" in the dashboard. Phase 5 (Clientes/Domain) is the natural place to introduce a many-to-one tikintag → empresa display-name mapping if Tikin confirms that's needed.
+- **Same tikintag may map to multiple wallets per empresa** — e.g. Liftit might have a corporate `$liftit-app` wallet and individual employee wallets with different tikintags. Today they appear as separate "empresas" in the dashboard (233 unique tikintags surfaced in production). Phase 5 (Clientes/Domain) is the natural place to introduce a many-to-one tikintag → empresa display-name mapping if Tikin confirms that's needed.
+- **Bonos default filter excludes `direction=out` and `status=rejected` silently.** This is intentional — refunds are recorded as separate `REFUND` tipo rows so excluding `out` here doesn't double-count, and rejected transactions never carried money. But if Tikin asks "why does the count differ from my Sheet pivot?", the gap is here. Documented inline in 02-02-SUMMARY.md "Bonos Filter Contract".
 
 **Resolved this session:**
 - ~~Schema mismatch in `src/lib/domain/schemas.ts`~~ — closed by Plan 02-01. /api/smoke green: count=3188, skipped=44.
 - ~~Empresa identity column ambiguous~~ — decided in Plan 02-01: default = tikintag (override is 2-line edit in schemas.ts).
+- ~~EmpresaFilter list is empty~~ — closed by Plan 02-02. Production verification: 233 unique empresas in dropdown, Spanish-collated, URL filter works (`?empresa=$mario` selects correctly).
 
 ## Session Continuity
 
-Last session: 2026-04-29 21:44 UTC
-Stopped at: Completed 02-01-PLAN.md (schemas rewrite to real BD_Plataforma headers). Phase 2 in progress (1/4). /api/smoke verde contra producción (count=3188, skipped=44, 1.36%). Latest production deploy: https://project-dashboard-44v5hovqa.vercel.app. Domain types are now grounded in live data — Plans 02-02 through 02-04 can consume Transaction/TransactionType/TransactionStatus with confidence.
+Last session: 2026-04-29 21:58 UTC
+Stopped at: Completed 02-02-PLAN.md (bonos.ts + empresas.ts + getCachedTransactions + async DashboardHeader). Phase 2 in progress (2/4). EmpresaFilter dropdown live with 233 unique empresas. Latest production deploy: https://project-dashboard-kz1v4pfzy.vercel.app. Plans 02-03 (Bonos UI components) and 02-04 (Bonos page) can now consume `filterBonos` + `summarizeBonos` + `aggregateBonosByDate` + `aggregateBonosByEmpresa` + `top10Empresas` with stable output types (`BonoSummary`, `BonoByDate`, `BonoByEmpresa`).
 Resume file: None
