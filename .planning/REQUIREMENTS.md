@@ -65,11 +65,11 @@ Pestaña de movimientos de recarga en la plataforma.
 
 Pestaña de retiros (a tarjetas y a cuentas bancarias) más data de tiempos de payouts. Vista de mayor uso en presentaciones a clientes.
 
-- [ ] **PAY-01**: Usuario ve KPI de # de payouts procesados + $ volumen en el período
-- [ ] **PAY-02**: Usuario ve KPI de Tiempo medio (P50) hasta payout (de la hoja de tiempos existente)
-- [ ] **PAY-03**: Usuario ve KPI de Tiempo P95 hasta payout (95% de los payouts se completan en menos de X)
-- [ ] **PAY-04**: Usuario ve split por tipo de destino — tarjeta vs cuenta bancaria — en todas las métricas de Payouts
-- [ ] **PAY-05**: Usuario ve histograma de latencia de payouts con buckets `<1h / 1-6h / 6-24h / >24h`
+- [x] **PAY-01**: Usuario ve KPI de # de payouts procesados + $ volumen en el período
+- [x] **PAY-02**: Usuario ve KPI de Tiempo medio (P50) hasta payout (de la hoja de tiempos existente)
+- [x] **PAY-03**: Usuario ve KPI de Tiempo P95 hasta payout (95% de los payouts se completan en menos de X)
+- [x] **PAY-04**: Usuario ve split por destino. **Reinterpretado 2026-05-04**: Plan 03-01 confirmó que los 798 payouts en producción son TODOS a banco (12 códigos) — cero tarjeta. Se cumplió el espíritu de PAY-04 ("split por destino visible") con un widget TopBancos (top 5 bancos + Otros bancos) en lugar de una dicotomía tarjeta-vs-banco que la data no soporta.
+- [x] **PAY-05**: Usuario ve histograma de latencia de payouts con buckets `<1h / 1-6h / 6-24h / >24h`
 
 ### Clientes
 
@@ -116,7 +116,7 @@ Diferidos a futuro release. Reconocidos pero no en el roadmap actual.
 
 ### Payouts
 
-- **PAY-V2-01**: Success rate % (requiere columna `status` en transacciones)
+- ~~**PAY-V2-01**: Success rate %~~ — **Promovido a v1 y completado en Phase 3** (2026-05-04). Data ya existe en `BD_Payouts.State`; KPI presenter-hidden incluido en `PayoutsKPICards.tsx`.
 - **PAY-V2-02**: Failures by cause / breakdown de motivos (requiere columna `failure_reason`)
 - **PAY-V2-03**: SLA badges por tipo de destino — ej. "Tarjetas: 92% en <2h" / "Bancos: 88% en <24h"
 - **PAY-V2-04**: Trend de P95 en el tiempo (¿estamos mejorando?)
@@ -187,11 +187,12 @@ Qué fase cubre cada requirement.
 | REC-01 | Phase 4 | Pending |
 | REC-02 | Phase 4 | Pending |
 | REC-03 | Phase 4 | Pending |
-| PAY-01 | Phase 3 | Pending |
-| PAY-02 | Phase 3 | Pending |
-| PAY-03 | Phase 3 | Pending |
-| PAY-04 | Phase 3 | Pending |
-| PAY-05 | Phase 3 | Pending |
+| PAY-01 | Phase 3 | Complete |
+| PAY-02 | Phase 3 | Complete |
+| PAY-03 | Phase 3 | Complete |
+| PAY-04 | Phase 3 | Complete (reinterpretado: TopBancos en vez de tarjeta-vs-banco) |
+| PAY-05 | Phase 3 | Complete |
+| PAY-V2-01 | Phase 3 | Complete (promovido de v2 a v1 durante Phase 3) |
 | CLI-01 | Phase 5 | Pending |
 | CLI-02 | Phase 5 | Pending |
 | CLI-03 | Phase 5 | Pending |
