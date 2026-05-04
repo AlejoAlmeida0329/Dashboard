@@ -264,3 +264,346 @@ export function summarizePayouts(payouts: Payout[]): PayoutSummary {
 
   return { count, montoTotal, p50Seconds, p95Seconds };
 }
+
+// --- Sibling filter for success-rate denominator ----------------------------
+
+/**
+ * Filter by date+empresa but KEEP all states. Used by `aggregateSuccessRate`
+ * which needs failed/in_progress rows in the denominator.
+ *
+ * If we used `filterPayouts` here, the rate would always be 100% (only
+ * completed payouts in the numerator AND denominator). The state filter
+ * is intentionally skipped.
+ *
+ * Pure: returns a new array; does not mutate `payouts`.
+ */
+export function filterPayoutsByPeriodOnly(
+  payouts: Payout[],
+  filters: DashboardFilters,
+): Payout[] {
+  const fromTs = startOfDayBogotaTimestamp(filters.from);
+  const toTs = endOfDayBogotaTimestamp(filters.to);
+  const empresa = filters.empresa;
+
+  return payouts.filter((p) => {
+    const ts = p.fecha.getTime();
+    if (!Number.isFinite(ts)) return false;
+    if (ts < fromTs) return false;
+    if (ts > toTs) return false;
+
+    if (empresa && p.empresa_id !== empresa) return false;
+
+    return true;
+  });
+}
+
+// --- Latency histogram ------------------------------------------------------
+
+/** Histogram bucket label — fixed 4-bucket shape. */
+export type LatencyBucketLabel = "<1h" | "1-6h" | "6-24h" | ">24h";
+
+/** One row of the latency histogram. */
+export interface LatencyBucket {
+  bucket: LatencyBucketLabel;
+  /** Total count of payouts in this bucket. */
+  count: number;
+}
+
+/**
+ * Bucket boundaries — half-open intervals `[lower, upper)`:
+ *   - `"<1h"`:   `latencySeconds <  3600`
+ *   - `"1-6h"`:  `3600  <= latencySeconds <  21600`   (6 * 3600)
+ *   - `"6-24h"`: `21600 <= latencySeconds <  86400`   (24 * 3600)
+ *   - `">24h"`:  `latencySeconds >= 86400`
+ *
+ * A boundary value (3600s, 21600s, 86400s) falls into the UPPER bucket —
+ * verified inline via fixtures in JSDoc. The half-open convention matches
+ * what R, NumPy, Excel, and most BI tools do for bins; closed-on-both-
+ * ends would require deciding whether 3600s is "<1h" or "1-6h" via a
+ * non-obvious tiebreak.
+ *
+ * The 4 labels are emitted in fixed order even when count=0 (stable shape
+ * for Recharts `BarChart` in Plan 03-03; missing buckets cause visual
+ * jumps when the data shifts on filter change).
+ */
+const HISTOGRAM_BUCKET_ORDER: readonly LatencyBucketLabel[] = [
+  "<1h",
+  "1-6h",
+  "6-24h",
+  ">24h",
+];
+
+/**
+ * Group payouts into 4 latency buckets. Single-series shape (no medium
+ * stack — see "Scope adjustment from Plan 03-01" in module docstring:
+ * all production payouts are bank, so a stack would always show one
+ * color and one zero, which is visually misleading).
+ *
+ * Always emits 4 rows in fixed order even when input is empty (stable
+ * shape; Recharts BarChart in Plan 03-03 needs deterministic categories
+ * across renders to avoid jarring shape changes on filter swap).
+ *
+ * O(n) single pass.
+ *
+ * @example boundary placement (verified in plan's verify section)
+ *   aggregateLatencyHistogram([
+ *     { latencySeconds: 600,    ... }, // 10m   → "<1h"
+ *     { latencySeconds: 3600,   ... }, // 1h    → "1-6h"   (boundary, upper bucket)
+ *     { latencySeconds: 21600,  ... }, // 6h    → "6-24h"  (boundary)
+ *     { latencySeconds: 86400,  ... }, // 24h   → ">24h"   (boundary)
+ *   ])
+ *   // → [
+ *   //     { bucket: "<1h",   count: 1 },
+ *   //     { bucket: "1-6h",  count: 1 },
+ *   //     { bucket: "6-24h", count: 1 },
+ *   //     { bucket: ">24h",  count: 1 },
+ *   //   ]
+ *
+ * @example empty input (stable shape)
+ *   aggregateLatencyHistogram([])
+ *   // → [{<1h:0}, {1-6h:0}, {6-24h:0}, {>24h:0}]
+ */
+export function aggregateLatencyHistogram(payouts: Payout[]): LatencyBucket[] {
+  // Initialize all 4 buckets to count=0 so we never miss a row in output.
+  const counts: Record<LatencyBucketLabel, number> = {
+    "<1h": 0,
+    "1-6h": 0,
+    "6-24h": 0,
+    ">24h": 0,
+  };
+
+  const ONE_HOUR = 3600;
+  const SIX_HOURS = 6 * 3600; // 21600
+  const ONE_DAY = 24 * 3600; // 86400
+
+  for (const p of payouts) {
+    const s = p.latencySeconds;
+    // Half-open intervals: a boundary value falls in the UPPER bucket.
+    if (s < ONE_HOUR) {
+      counts["<1h"] += 1;
+    } else if (s < SIX_HOURS) {
+      counts["1-6h"] += 1;
+    } else if (s < ONE_DAY) {
+      counts["6-24h"] += 1;
+    } else {
+      counts[">24h"] += 1;
+    }
+  }
+
+  return HISTOGRAM_BUCKET_ORDER.map((bucket) => ({
+    bucket,
+    count: counts[bucket],
+  }));
+}
+
+// --- Top bancos (replaces aggregateByDestination per Plan 03-01 findings) ---
+
+/** Per-bank aggregate stats (used by `aggregateTopBancos`). */
+export interface BancoStats {
+  /**
+   * Bank code (Payout.medium), e.g. `"bancolombia"`, `"nequi"`. The literal
+   * string `"Otros bancos"` is reserved for the rolled-up tail emitted by
+   * `aggregateTopBancos`.
+   */
+  medium: string;
+  count: number;
+  montoTotal: number;
+  p50Seconds: number;
+  p95Seconds: number;
+}
+
+/** Result shape of `aggregateTopBancos`. */
+export interface TopBancos {
+  /** Top N banks by `montoTotal`, descending. Length 0..N. */
+  top: BancoStats[];
+  /**
+   * Aggregate of remaining banks (positions n+1..end). When there were
+   * `<=N` total banks, `otros.count === 0` (zero-safe placeholder).
+   */
+  otros: BancoStats;
+}
+
+/**
+ * Aggregate per-bank stats and split into "top N by montoTotal" plus an
+ * "Otros bancos" rollup of the rest.
+ *
+ * Reinterprets PAY-04's "split por destino" using real granularity. Plan
+ * 03-01 confirmed all 798 production payouts are to banks (12 distinct
+ * codes); the originally planned tarjeta/banco binary collapses to one
+ * category. Top N + Otros surfaces the actual distribution: which banks
+ * see the most $ flowing through Tikin.
+ *
+ * Algorithm:
+ *   1. Group `payouts` by `medium` into `Map<medium, Payout[]>`.
+ *   2. For each group, compute `BancoStats`: count, montoTotal, p50, p95.
+ *      Sort latencies once per group; reuse for both percentiles.
+ *   3. Sort groups by `montoTotal` DESC.
+ *   4. `top = first N`; `otrosRows = remaining groups flattened`.
+ *   5. `otros = aggregate(otrosRows, "Otros bancos")` if non-empty,
+ *      otherwise a zero-safe placeholder.
+ *
+ * NOTE on "Otros" aggregation: we re-aggregate the underlying rows rather
+ * than summing per-bank `BancoStats` because percentiles do NOT compose by
+ * addition. The p95 of (group A ∪ group B) is generally NOT a function of
+ * p95(A) and p95(B). We need the underlying values.
+ *
+ * Zero-safe: empty input → `{ top: [], otros: <zero placeholder> }`. The
+ * `medium: "Otros bancos"` is the literal Spanish string Plan 03-03 will
+ * render in the UI.
+ *
+ * @example
+ *   aggregateTopBancos([
+ *     { medium: "bancolombia", monto: 1000000, latencySeconds: 3600, ... },
+ *     { medium: "nequi",       monto:  500000, latencySeconds: 1800, ... },
+ *     { medium: "daviplata",   monto:  100000, latencySeconds: 7200, ... },
+ *   ], 2)
+ *   // → {
+ *   //     top: [
+ *   //       { medium: "bancolombia", count: 1, montoTotal: 1000000, p50Seconds: 3600, p95Seconds: 3600 },
+ *   //       { medium: "nequi",       count: 1, montoTotal:  500000, p50Seconds: 1800, p95Seconds: 1800 },
+ *   //     ],
+ *   //     otros: { medium: "Otros bancos", count: 1, montoTotal: 100000, p50Seconds: 7200, p95Seconds: 7200 },
+ *   //   }
+ *
+ * @example empty input
+ *   aggregateTopBancos([])
+ *   // → { top: [], otros: { medium: "Otros bancos", count: 0, montoTotal: 0, p50Seconds: 0, p95Seconds: 0 } }
+ */
+export function aggregateTopBancos(payouts: Payout[], n = 5): TopBancos {
+  // Helper: compute BancoStats from a list of payouts.
+  const aggregate = (rows: Payout[], label: string): BancoStats => {
+    const count = rows.length;
+    if (count === 0) {
+      return {
+        medium: label,
+        count: 0,
+        montoTotal: 0,
+        p50Seconds: 0,
+        p95Seconds: 0,
+      };
+    }
+    let montoTotal = 0;
+    const latencies: number[] = new Array(count);
+    for (let i = 0; i < count; i += 1) {
+      montoTotal += rows[i].monto;
+      latencies[i] = rows[i].latencySeconds;
+    }
+    latencies.sort((a, b) => a - b);
+    return {
+      medium: label,
+      count,
+      montoTotal,
+      p50Seconds: quantileSorted(latencies, 0.5),
+      p95Seconds: quantileSorted(latencies, 0.95),
+    };
+  };
+
+  // Empty-input fast path keeps shape stable.
+  if (payouts.length === 0) {
+    return {
+      top: [],
+      otros: aggregate([], "Otros bancos"),
+    };
+  }
+
+  // Group by medium.
+  const byMedium = new Map<string, Payout[]>();
+  for (const p of payouts) {
+    const cur = byMedium.get(p.medium);
+    if (cur) {
+      cur.push(p);
+    } else {
+      byMedium.set(p.medium, [p]);
+    }
+  }
+
+  // Compute stats per group, then sort desc by montoTotal.
+  const groups: BancoStats[] = [];
+  for (const [medium, rows] of byMedium) {
+    groups.push(aggregate(rows, medium));
+  }
+  groups.sort((a, b) => b.montoTotal - a.montoTotal);
+
+  const top = groups.slice(0, n);
+
+  // Rollup the remaining groups back into a flat row list, then aggregate
+  // as a single "Otros bancos" stats row. We re-aggregate (not just sum
+  // BancoStats fields) because percentiles do NOT compose by addition.
+  const otrosGroupNames = new Set(groups.slice(n).map((g) => g.medium));
+  if (otrosGroupNames.size === 0) {
+    return { top, otros: aggregate([], "Otros bancos") };
+  }
+  const otrosRows: Payout[] = [];
+  for (const p of payouts) {
+    if (otrosGroupNames.has(p.medium)) otrosRows.push(p);
+  }
+  return { top, otros: aggregate(otrosRows, "Otros bancos") };
+}
+
+// --- Success rate (uses STATE-UNFILTERED input — see helper above) ----------
+
+/** Result of `aggregateSuccessRate` — the success-rate KPI. */
+export interface SuccessRate {
+  /**
+   * Fraction 0..1 (consume via `formatPercent` from `format.ts`). `0` when
+   * `totalAttempted === 0` — zero-safe per Plan 02-02 `pctDelTotal` pattern.
+   */
+  rate: number;
+  /** Count of rows with `state ∈ COMPLETED_PAYOUT_STATES`. */
+  completed: number;
+  /** Total count of rows considered (completed + non-completed). */
+  totalAttempted: number;
+}
+
+/**
+ * Compute the success rate KPI from a STATE-UNFILTERED universe of payouts.
+ *
+ * Special note on input: this function expects rows that are filtered by
+ * date + empresa BUT NOT BY STATE. The denominator MUST include
+ * failed/in_progress payouts, otherwise the rate is always 100% (the
+ * classic "I divided by completed-only" bug).
+ *
+ * Recommended call shape from Plan 03-04 page composition:
+ *   const filteredAll = filterPayoutsByPeriodOnly(allPayouts, filters);
+ *   const filteredCompleted = filterPayouts(allPayouts, filters);
+ *   const successRate = aggregateSuccessRate(filteredAll);
+ *
+ * Compute:
+ *   - `totalAttempted = rows.length`
+ *   - `completed = rows.filter(r => COMPLETED_PAYOUT_STATES.includes(r.state)).length`
+ *   - `rate = totalAttempted > 0 ? completed / totalAttempted : 0`
+ *     (zero-safe per Plan 02-02 `pctDelTotal` pattern)
+ *
+ * Plan 03-01 confirmed the rejected-equivalent state in BD_Payouts is
+ * `failed` (NOT `rejected` as in BD_Plataforma).
+ *
+ * @example
+ *   aggregateSuccessRate([
+ *     { state: "completed",   ... },
+ *     { state: "completed",   ... },
+ *     { state: "failed",      ... },
+ *   ])
+ *   // → { rate: 0.6666666666666666, completed: 2, totalAttempted: 3 }
+ *
+ * @example empty input
+ *   aggregateSuccessRate([])
+ *   // → { rate: 0, completed: 0, totalAttempted: 0 }
+ */
+export function aggregateSuccessRate(rows: Payout[]): SuccessRate {
+  const totalAttempted = rows.length;
+  if (totalAttempted === 0) {
+    return { rate: 0, completed: 0, totalAttempted: 0 };
+  }
+
+  const completedSet = new Set<string>(COMPLETED_PAYOUT_STATES);
+  let completed = 0;
+  for (const r of rows) {
+    if (completedSet.has(r.state)) completed += 1;
+  }
+
+  return {
+    rate: completed / totalAttempted,
+    completed,
+    totalAttempted,
+  };
+}
