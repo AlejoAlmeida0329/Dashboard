@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import type {
+  Payout,
+  PayoutState,
   Transaction,
   TransactionDirection,
   TransactionStatus,
@@ -193,3 +195,254 @@ export const TransactionRowSchema = z
   );
 
 export type TransactionRowInput = z.input<typeof TransactionRowSchema>;
+
+/* ============================================================================
+ * Payouts (BD_Payouts) — Phase 3 Plan 01
+ * ----------------------------------------------------------------------------
+ * Schema captured live 2026-05-04 via a diagnostic route (deleted; mirrors
+ * Plan 02-01 pattern) against 798 production rows. Sheet stores values in
+ * unexpected formats — see helpers below.
+ * ========================================================================== */
+
+/**
+ * Headers expected on the BD_Payouts Sheet (lowercased + trimmed).
+ *
+ * Confirmed live 2026-05-04 against the real Sheet (15 columns, 798 rows).
+ * Headers contain spaces (e.g. `"transaction id"` with the embedded space) —
+ * `headerIndexMap` lowercases + trims, so this matches the live key shape.
+ *
+ * If a header changes upstream, the adapter throws a clear "schema mismatch
+ * — columnas faltantes en BD_Payouts Sheet: X, Y, Z" error naming exactly
+ * which expected header is absent. Resolution: edit this tuple and the
+ * matching schema field.
+ */
+export const ExpectedPayoutHeaders = [
+  "transaction id",
+  "date",
+  "holder",
+  "destination account",
+  "value",
+  "destination medium",
+  "transaction cost",
+  "state",
+  "state timestamp",
+  "refund sent",
+  "aging",
+  "failure reason",
+  "failure details",
+  "total time",
+  "id",
+] as const;
+
+export type ExpectedPayoutHeader = (typeof ExpectedPayoutHeaders)[number];
+
+/**
+ * Distinct `state` values captured live 2026-05-04 (lowercase in Sheet).
+ * Unseen values fall back to `OTRO_STATE`.
+ */
+const KNOWN_PAYOUT_STATES: readonly PayoutState[] = [
+  "completed",
+  "in_progress",
+  "failed",
+];
+
+/**
+ * Parse a BD_Payouts COP-formatted string to a number.
+ *
+ * BD_Payouts stores `Value` and `Transaction Cost` as pre-formatted
+ * strings like `"COP 200,000.00"`, `"COP 5,229.46"`, `"COP 1,500,000.00"`.
+ * UNFORMATTED_VALUE doesn't strip the formatting because the cell is
+ * actually a TEXT cell upstream (probably from a Looker / report export).
+ *
+ * Strategy: strip non-digit/decimal/sign chars (handles "COP", spaces,
+ * thousands separators), then `Number()`. Empty / NaN / Infinity yields
+ * a parse error so the row is skipped (mirrors Money's behavior).
+ *
+ * Examples:
+ *   "COP 200,000.00" → 200000
+ *   "COP 5,229.46"   → 5229.46
+ *   "COP 1,500,000.00" → 1500000
+ */
+const MoneyFromCOP = z
+  .union([z.string(), z.number()])
+  .transform((v, ctx): number => {
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Money is not finite",
+        });
+        return z.NEVER;
+      }
+      return v;
+    }
+    // Strip "COP", spaces, and thousands separators (commas).
+    // Keep digits, sign, and decimal point.
+    const cleaned = v.replace(/[^0-9.\-]/g, "");
+    if (cleaned.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Money string had no parseable digits: "${v}"`,
+      });
+      return z.NEVER;
+    }
+    const n = Number(cleaned);
+    if (!Number.isFinite(n)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Money string parsed to non-finite number: "${v}"`,
+      });
+      return z.NEVER;
+    }
+    return n;
+  });
+
+/**
+ * Parse a PostgreSQL interval string to seconds.
+ *
+ * BD_Payouts stores `Aging` and `Total Time` as PostgreSQL interval
+ * strings like `"0 years 0 mons 12 days 20 hours 30 mins 38.656877 secs"`.
+ * Empty string is a valid input (returns 0) — `Total Time` is empty for
+ * non-completed payouts; the consumer (Plan 03-02) filters those out
+ * before percentile.
+ *
+ * Years and months are converted with average lengths (365.25 d, 30.44 d)
+ * for defensive correctness; in practice 798/798 production rows have
+ * `0 years 0 mons` so the y/mo factors never matter.
+ *
+ * Returns NaN if the format doesn't match — caller decides whether to
+ * skip or fall back. The Payout schema falls back from Total Time to
+ * Aging if Total Time is empty/NaN.
+ */
+function parsePgInterval(s: unknown): number {
+  if (typeof s !== "string") return NaN;
+  const trimmed = s.trim();
+  if (trimmed === "") return 0;
+  const m = trimmed.match(
+    /(-?\d+)\s+years?\s+(-?\d+)\s+mons?\s+(-?\d+)\s+days?\s+(-?\d+)\s+hours?\s+(-?\d+)\s+mins?\s+(-?\d+(?:\.\d+)?)\s+secs?/i,
+  );
+  if (!m) return NaN;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const h = Number(m[4]);
+  const mi = Number(m[5]);
+  const se = Number(m[6]);
+  // 365.25 d/y, 30.44 d/mo (average) — defensive; real data has y=mo=0.
+  return y * 365.25 * 86400 + mo * 30.44 * 86400 + d * 86400 + h * 3600 + mi * 60 + se;
+}
+
+/**
+ * Parse a BD_Payouts date string like `"April 27, 2026, 9:48 AM"` into a Date.
+ *
+ * BD_Payouts.Date arrives as a comma-separated English locale string
+ * (the Sheet appears to render dates as TEXT for readability). JS's
+ * built-in `Date()` constructor accepts this format on V8 (Node + Chrome
+ * + Vercel runtime), validated against the diagnostic samples.
+ *
+ * Returns Invalid Date (whose .getTime() is NaN) when the string is
+ * unparseable; the schema's `.refine()` catches that and skips the row.
+ */
+function parseHumanDate(s: unknown): Date {
+  if (typeof s !== "string") return new Date(NaN);
+  return new Date(s);
+}
+
+/**
+ * Validate a single BD_Payouts row.
+ *
+ * Input shape: `{ [header_lowercased_with_spaces]: unknown }`. The
+ * adapter (payouts.ts) builds this object from the row + headerIndexMap
+ * so the schema never sees raw positional arrays.
+ *
+ * Schema decisions (live-grounded 2026-05-04):
+ *   - `value` & `transaction cost` parsed from `"COP 200,000.00"`-style strings.
+ *   - `date` & `state timestamp` parsed from `"April 27, 2026, 9:48 AM"`-style.
+ *   - `aging` & `total time` parsed from PostgreSQL interval strings to seconds.
+ *   - `latencySeconds` = total_time when > 0, else aging (defensive fallback;
+ *     non-completed rows have empty total_time).
+ *   - `medium` = lowercased+trimmed bank code (the 12 distinct values
+ *     are bank/wallet codes; no `tarjeta` data in production).
+ *   - `state` = one of completed/in_progress/failed, else OTRO_STATE.
+ *
+ * Final `.transform()` is the SINGLE place where Sheet column names get
+ * mapped to domain field names.
+ */
+export const PayoutRowSchema = z
+  .object({
+    "transaction id": z.string().min(1),
+    date: z.unknown().transform((v, ctx): Date => {
+      const d = parseHumanDate(v);
+      if (Number.isNaN(d.getTime())) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Date string unparseable: ${String(v)}`,
+        });
+        return z.NEVER;
+      }
+      return d;
+    }),
+    holder: z.string().min(1),
+    value: MoneyFromCOP,
+    "destination medium": z
+      .union([z.string(), z.number()])
+      .transform((v) => {
+        const s = typeof v === "string" ? v : String(v);
+        const norm = s.trim().toLowerCase();
+        return norm.length === 0 ? "OTRO_MEDIUM" : norm;
+      }),
+    "transaction cost": MoneyFromCOP,
+    state: z.string().transform((s): PayoutState => {
+      const lower = s.trim().toLowerCase();
+      return (KNOWN_PAYOUT_STATES as readonly string[]).includes(lower)
+        ? (lower as PayoutState)
+        : "OTRO_STATE";
+    }),
+    aging: z.unknown().transform((v, ctx): number => {
+      const n = parsePgInterval(v);
+      if (Number.isNaN(n)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Aging interval unparseable: ${String(v)}`,
+        });
+        return z.NEVER;
+      }
+      return n;
+    }),
+    "total time": z.unknown().transform((v): number => {
+      const n = parsePgInterval(v);
+      // Tolerate parse failures here — total_time is empty for non-completed
+      // rows, and we fall back to aging in the outer transform.
+      return Number.isNaN(n) ? 0 : n;
+    }),
+    "failure reason": OptionalString,
+    "failure details": OptionalString,
+    id: z.string().min(1),
+    // Tolerate the remaining columns silently — present in the Sheet but
+    // not consumed by the Payout interface in Phase 3.
+    "destination account": OptionalString,
+    "state timestamp": OptionalString,
+    "refund sent": OptionalString,
+  })
+  .transform(
+    (parsed): Payout => ({
+      transactionId: parsed["transaction id"],
+      internalId: parsed.id,
+      fecha: parsed.date,
+      holder: parsed.holder,
+      monto: parsed.value,
+      costo: parsed["transaction cost"],
+      medium: parsed["destination medium"],
+      state: parsed.state,
+      // Total Time when > 0 (canonical for completed); Aging otherwise.
+      // See Payout.latencySeconds JSDoc + 03-CONTEXT.md essentials —
+      // Plan 03-02 filters to state==completed before percentile, so the
+      // fallback only matters defensively for the success-rate KPI path.
+      latencySeconds:
+        parsed["total time"] > 0 ? parsed["total time"] : parsed.aging,
+      failureReason: parsed["failure reason"],
+      failureDetails: parsed["failure details"],
+    }),
+  );
+
+export type PayoutRowInput = z.input<typeof PayoutRowSchema>;
