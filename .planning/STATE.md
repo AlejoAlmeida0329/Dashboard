@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-04-27)
 
 **Core value:** Una sola URL donde el equipo de Tikin ve métricas frescas del negocio sin abrir Sheets, presentable cuando se proyecta a clientes.
-**Current focus:** Phase 2 — Bonos
+**Current focus:** Phase 3 — Payouts
 
 ## Current Position
 
-Phase: 2 of 5 (Bonos) — ✅ COMPLETE
-Plan: 4 of 4 (Bonos page composition) — completed
-Status: Phase 2 ships. /bonos renders live BD_Plataforma data end-to-end. URL filters propagate to KPICards + BonosChart + Leaderboard + SalesTable; presenter mode hides KPI Comisión + Leaderboard + last 2 SalesTable cols declaratively via CSS; empty/error states with Spanish copy. DashboardHeader and the page share one Sheets fetch per request via React `cache()` (no double-fetch verified by page-size coherence in production). The Server-Component-page-composition pattern is locked in for Phases 3-5: parseFilters → getCachedTransactions → filter+aggregate (pure) → render typed leaves. Ready for Phase 3 (Payouts).
-Last activity: 2026-04-29 — Completed 02-04-PLAN.md (page.tsx composes 4 components + 5 domain functions, force-dynamic, production-verified across 16 checks)
+Phase: 3 of 5 (Payouts) — IN PROGRESS
+Plan: 1 of N (Sheets adapter + schema/types + smoke) — completed; Plan 02 next
+Status: Plan 03-01 ships. BD_Payouts adapter (`getPayouts` + `getCachedPayouts`) ingests 797/798 production rows on first try (0.13% skip rate). Three open questions from 03-RESEARCH.md resolved with concrete data: (1) Aging/Total Time are PostgreSQL interval STRINGS — Total Time is canonical for completed rows, Aging fallback otherwise. (2) Destination Medium is BANK CODES (12 distinct: bancolombia, nequi, etc.) — NOT tarjeta/cuenta_bancaria as research speculated; PAY-04's split needs reinterpretation. (3) Holder is CARDHOLDER NAME, not tikintag — empresa filter requires Transaction ID join in Plan 03-02. /api/smoke regression check confirms transactions adapter unchanged (count=3188, skipped=44). Ready for Plan 03-02 (domain + page composition).
+Last activity: 2026-05-04 — Completed 03-01-PLAN.md (BD_Payouts adapter mirroring transactions.ts; live diagnostic-then-cleanup pattern confirmed working a second time post-Plan-02-01)
 
-Progress (all plans, total 5+4+...): ██░░░░░░░░ 8/? (Phase 1 done 4/4; Phase 2 done 4/4; Phase 3 next)
+Progress (all plans, total 5+4+...): ██░░░░░░░░ 9/? (Phase 1 done 4/4; Phase 2 done 4/4; Phase 3 in progress 1/N)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
-- Average duration: ~11m
-- Total execution time: ~85m (over 3 calendar days due to user_setup gates)
+- Total plans completed: 9
+- Average duration: ~10m
+- Total execution time: ~93m (over 4 calendar days due to user_setup gates)
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress (all plans, total 5+4+...): ██░░░░░░░░ 8/? (Phase 1
 |-------|-------|-------|----------|
 | 01-foundation | 4/4 | ~57m | ~14m |
 | 02-bonos | 4/4 | ~28m | ~7m |
+| 03-payouts | 1/N | ~8m | ~8m |
 
 **Recent Trend:**
-- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s), 02-02 (8m 35s), 02-03 (3m 14s), 02-04 (5m 12s)
-- Trend: Phase 2 averaged ~7m/plan vs Phase 1's ~14m/plan — half the time per plan, with 100% of plans surviving production verification on first deploy. The "pure functions + React `cache()` + force-dynamic page" stack from Plans 02-02/03/04 produces predictable composition with no architectural surprises. The whole phase shipped without a single Rule-2 (missing critical) or Rule-3 (blocker) deviation; only 3 micro Rule-1 fixes total across the phase (variable_fee_percentage range in 02-01, double-`$` + unformatted count in 02-03), all caught at code-write time. Phase 1's single Intl gate continues to absorb every numeric path; zero code-level `Intl.NumberFormat` introductions across Phase 2.
+- 01-01 (11m 24s), 01-02 (7m 50s), 01-03 (13m 14s), 01-04 (~25m active + several gate-waits for GCP/Vercel/Upstash setup), 02-01 (11m 22s), 02-02 (8m 35s), 02-03 (3m 14s), 02-04 (5m 12s), 03-01 (8m 19s)
+- Trend: Phase 3 opens at ~8m for Plan 01, comparable to Phase 2's pace despite four Rule-1 deviations from a research-vs-reality mismatch (Aging/TotalTime were PG interval strings not numbers; Destination Medium was bank codes not tarjeta/banco; value/cost were "COP "-prefixed strings not raw numbers; date was English-locale not ISO). All four caught at the diagnostic-then-cleanup phase BEFORE any production-facing code shipped wrong assumptions. The diagnostic-then-cleanup pattern from Plan 02-01 worked exactly the second time — 30-second JSON capture saved hours of post-deploy schema rework. Phase 1's single Intl gate continues to absorb every numeric path; zero code-level `Intl.NumberFormat` introductions across the new payouts files.
 
 ## Accumulated Context
 
@@ -91,6 +92,14 @@ Recent decisions affecting current work:
 - Plan 02-04 (2026-04-29): No `verifySession()` call in the page. The `(protected)/layout.tsx` from Plan 01-04 already guards the entire subtree (and the proxy gate from 01-01 catches it earlier). Re-calling here would be redundant. Future protected pages follow this pattern — auth lives in the layout, never per-page.
 - Plan 02-04 (2026-04-29): Layout grid `lg:grid-cols-[1fr_2fr]` for Leaderboard | SalesTable. The table has 5 columns and visually weighs more; 1:2 ratio prevents the table from looking cramped while keeping the leaderboard readable. Mobile (default) stacks them vertically with `space-y-6`. Pattern reusable for Phases 3-5 wherever a list and a table coexist.
 - Plan 02-04 (2026-04-29): No deviations during execution. Plan's literal code block compiled clean on first build, production deployed clean on first try, all 16 verification checks green. Zero Rule-1/2/3 fixes needed. Phase 2 ships unblocked.
+- Plan 03-01 (2026-05-04): BD_Payouts wire format is FAR more exotic than research speculated. Live capture (798 rows) revealed: `value`/`transaction cost` ship as `"COP 200,000.00"` strings (not numbers); `aging`/`total time` ship as PostgreSQL interval strings `"0 years 0 mons N days HH hours MM mins SS.fff secs"` (not numbers, not seconds, not "HH:MM:SS"); `date`/`state timestamp` ship as English-locale strings `"April 27, 2026, 9:48 AM"`. Two new Zod helpers (`MoneyFromCOP`, `parsePgInterval`) absorb the parsing in schemas.ts; downstream `Payout` interface stays clean (numbers + Dates).
+- Plan 03-01 (2026-05-04): `Holder` is a CARDHOLDER FULL NAME, NOT a tikintag. The empresa filter (CROSS-02) cannot match `holder === '$mario'`. Plan 03-02 (page composition) MUST build a `Map<transactionId, empresaId>` from BD_Plataforma rows and join via `Payout.transactionId` to populate `Payout.empresa_id` when the URL filter is active. Default Payout.empresa_id is undefined; the join is the override path. No-empresa-filter case can skip the join entirely.
+- Plan 03-01 (2026-05-04): `Destination Medium` is a BANK CODE (12 distinct values: bancolombia, nequi, daviplata, nubank, banco_de_bogota, banco_davivienda, banco_caja_social_bcsc, banco_av_villas, banco_falabella, banco_bbva_colombia, banco_mundo_mujer, davibank), NOT 'tarjeta'/'cuenta_bancaria' as 03-RESEARCH.md speculated. All 798 production rows are bank payouts — there are NO card payouts in BD_Payouts. PAY-04's "split tarjeta vs banco" needs reinterpretation by Plan 03-02/03: either (a) split by bank with top-N + "otros" bucket, or (b) drop the split entirely as a degenerate one-category KPI. PayoutMedium typed as open `string` (with OTRO_MEDIUM constant) so Tikin onboarding new banks doesn't churn the schema.
+- Plan 03-01 (2026-05-04): `latencySeconds` = Total Time when present (state_timestamp − date, populated for completed payouts), Aging fallback otherwise. Total Time is the canonical end-to-end "time-to-payout"; Aging is the row's age (now − date) and is the wrong metric for percentile/histogram. Plan 03-02 percentile/histogram MUST filter to `state==completed` BEFORE reading latencySeconds — per 03-CONTEXT.md essentials ("solo payouts que efectivamente se completaron"). The fallback is purely defensive; success-rate KPI (PAY-V2-01) is the only consumer that touches non-completed rows.
+- Plan 03-01 (2026-05-04): Adapter uses `.get()` (one range) NOT `batchGet` (two ranges). 03-RESEARCH.md preferred batchGet for one-quota-unit savings. Divergence rationale: transactions.ts already ships its own `.get()`; React `cache()` already dedupes per-render; two cached fetches = 2 quota units = same as 1 batchGet. Switching transactions.ts to share a batchGet wrapper is a non-trivial refactor of working code. Future optimization path documented inline in `payouts.ts` JSDoc: introduce `getCachedSheetsBundle()` that batchGets both ranges if 429s start appearing.
+- Plan 03-01 (2026-05-04): `Payout.transactionId` (from BD_Payouts.Transaction ID) is the join key to BD_Plataforma; `Payout.internalId` (from BD_Payouts.ID, a 64-char hash) is the row's primary key for dedup. They are DISTINCT — one transaction may produce multiple payout rows (refund+retry per 03-RESEARCH.md Pitfall 9). The histogram in Plan 03-02 counts rows by `internalId`; the join uses `transactionId`.
+- Plan 03-01 (2026-05-04): Diagnostic-then-cleanup pattern confirmed working a SECOND time (after Plan 02-01). 30-second live capture surfaced 4 schema-shape surprises that would have caused 100% skip rate or wrong domain modeling if assumed from research. Pattern is now established as the FIRST step of any plan that introduces a new Sheet tab. Future Phase 4 (Recargas) plans should mirror this exactly when reading any new tab.
+- Plan 03-01 (2026-05-04): Single-commit-per-plan pattern preserved (mirror of 02-01). Diagnostic route created in Task 1, used to capture findings, deleted in Task 2 before commit. Git never tracked the diagnostic route. Single feat commit `94ccc9a` shows only the rewrite + cleanup state. Production HEAD never carried inspection-only code. This deviates from the orchestrator's generic "per-task atomic commit" rule — documented explicitly in 03-01-SUMMARY.md "Single-Commit Pattern".
 
 ### Pending Todos
 
@@ -106,15 +115,19 @@ None yet.
 - **TransactionType.UKNOWN is a real value in production data** (sic — typo). Schema preserves it verbatim rather than silently mapping to OTRO so the data-quality issue stays visible in dashboards. User owns source-side cleanup at the Sheet.
 - **Same tikintag may map to multiple wallets per empresa** — e.g. Liftit might have a corporate `$liftit-app` wallet and individual employee wallets with different tikintags. Today they appear as separate "empresas" in the dashboard (233 unique tikintags surfaced in production). Phase 5 (Clientes/Domain) is the natural place to introduce a many-to-one tikintag → empresa display-name mapping if Tikin confirms that's needed.
 - **Bonos default filter excludes `direction=out` and `status=rejected` silently.** This is intentional — refunds are recorded as separate `REFUND` tipo rows so excluding `out` here doesn't double-count, and rejected transactions never carried money. But if Tikin asks "why does the count differ from my Sheet pivot?", the gap is here. Documented inline in 02-02-SUMMARY.md "Bonos Filter Contract".
+- **No card payouts in BD_Payouts.** All 798 production rows are bank payouts (12 distinct bank codes). PAY-04's "split tarjeta vs banco" assumption from REQUIREMENTS.md / ROADMAP.md cannot be honored as-stated. Plan 03-02/03 must reinterpret: either split by bank (top 5 + "otros"), or drop the split entirely. User decision may be needed before Plan 03-02 page composition; doable in a brainstorm pass at start of 03-02 plan-author phase.
+- **BD_Payouts.Holder ≠ tikintag.** Holder is a cardholder full name (e.g. "Angela Yaneth leal liberato"); tikintag is `$mario`-shaped. The single global empresa filter (CROSS-02) populated from BD_Plataforma cannot directly filter Payouts. Plan 03-02 page composition MUST build a `Map<transactionId, empresaId>` from BD_Plataforma transactions and join via `Payout.transactionId`. Per-render cost: one extra Map construction (3188 entries, O(n) linear); negligible.
+- **One BD_Payouts row had a numeric `Holder` cell** (Row 188 in current data). Skip rate 0.13% is acceptable but worth monitoring as data grows. If skip rate climbs, widening the `holder` schema to `z.union([z.string(), z.number()]).transform(s => String(s).trim())` is a 1-line fix in `src/lib/domain/schemas.ts`.
 
 **Resolved this session:**
 - ~~Schema mismatch in `src/lib/domain/schemas.ts`~~ — closed by Plan 02-01. /api/smoke green: count=3188, skipped=44.
 - ~~Empresa identity column ambiguous~~ — decided in Plan 02-01: default = tikintag (override is 2-line edit in schemas.ts).
 - ~~EmpresaFilter list is empty~~ — closed by Plan 02-02. Production verification: 233 unique empresas in dropdown, Spanish-collated, URL filter works (`?empresa=$mario` selects correctly).
 - ~~/bonos placeholder page~~ — closed by Plan 02-04. /bonos now renders live BD_Plataforma data end-to-end with all filters working, presenter mode visually correct, empty/error states with Spanish copy, no regression on the other 4 tabs.
+- ~~3 unknowns from 03-RESEARCH.md (Aging/TotalTime units, Destination Medium values, Holder ↔ tikintag)~~ — closed by Plan 03-01 via diagnostic-then-cleanup. All three answered with concrete production data; downstream decisions documented inline in `Payout` JSDoc and in 03-01-SUMMARY.md.
 
 ## Session Continuity
 
-Last session: 2026-04-29 22:17 UTC
-Stopped at: ✅ Phase 2 (Bonos) shipped — all 4/4 plans complete, all 5 BON-* requirements covered, all 5 roadmap success criteria verified live in production. Last deploy: https://project-dashboard-qhrwwpfuw.vercel.app (id dpl_8fS54PUX3wufcK5uKabgjM93izMk). 16/16 verification checks passed (smoke, /bonos default, date range, empresa filter, presenter mode, combo presenter+empresa, empty state, no-regression on /inicio /payouts /clientes /recargas, build + lint + tsc clean, page-size coherence confirms no double-fetch). Phase 3 (Payouts) is next — the Server-Component-page-composition skeleton from 02-04 transfers directly: parseFilters → getCachedPayouts (Phase 3 will create) → filterPayouts → aggregations → typed leaves. Same Phase 1 contracts apply (URL state, presenter-mode CSS, format.ts gate, empresa filter via DashboardHeader). Phase 3 also gets the chance to fold in the now-v1-eligible PAY-V2-01 (success rate) and PAY-V2-02 (failure breakdown) — data exists in BD_Payouts (`State` + `Failure Reason`) per 01-04-SUMMARY.md.
+Last session: 2026-05-04 14:30 UTC
+Stopped at: ✅ Plan 03-01 (Payouts adapter) shipped. /api/payouts-smoke green (count=797, skipped=1, 0.13%). `Payout` interface stable; `getPayouts` + `getCachedPayouts` mirror transactions.ts byte-for-byte. Three unknowns from research resolved with live data; four Rule-1 deviations documented (PayoutMedium open-string vs closed-union, parsePgInterval helper, MoneyFromCOP helper, parseHumanDate wrapper) — all caught at diagnostic-then-cleanup before any production-facing code shipped wrong assumptions. /api/smoke regression check confirms transactions adapter unchanged (count=3188, skipped=44 — identical to pre-plan). npm run build + lint pass clean. Phase 3 Plan 02 is next — likely "domain + page composition": pure functions in src/lib/domain/payouts.ts (filterPayouts, summarizePayouts, computeLatencyPercentiles, aggregateLatencyHistogram) + page.tsx mirroring /bonos/page.tsx with the new wrinkle that empresa filter requires Transaction ID join to BD_Plataforma when active. PAY-04 "tarjeta vs banco" split needs design call before Plan 03-02 page composition (no card data exists in production).
 Resume file: None
