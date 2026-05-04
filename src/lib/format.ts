@@ -80,6 +80,31 @@ export const formatPercent = (n: number | null | undefined): string => {
   return pctCO.format(n);
 };
 
+/**
+ * `formatDuration(720)` → `'0:12:00'`
+ * `formatDuration(3661)` → `'1:01:01'`
+ * `formatDuration(90061)` → `'25:01:01'` (no day rollover; ops-friendly continuous hours)
+ * `formatDuration(0)` → `'0:00:00'`
+ * `formatDuration(null | undefined | NaN | Infinity | <0)` → `'—'`
+ *
+ * Compact / technical HH:MM:SS per Phase 3 CONTEXT.md vision (P50/P95 as
+ * "incuestionable" numbers, presented as a real ops-dashboard reading,
+ * not a humanized "12 minutes" marketing line).
+ *
+ * Pure JS — does NOT use Intl (no locale variation; this is purely
+ * numeric formatting and the colon convention is universal). Single
+ * Intl gate (Pitfall 9) is preserved.
+ */
+export const formatDuration = (seconds: number | null | undefined): string => {
+  if (!isFiniteNumber(seconds) || seconds < 0) return "—";
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${h}:${pad(m)}:${pad(s)}`;
+};
+
 // --- Dates ------------------------------------------------------------------
 
 /**
