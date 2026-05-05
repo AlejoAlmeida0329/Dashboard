@@ -150,3 +150,36 @@
 [data-presenter="on"] [data-presenter-hide] {
   display: none !important;
 }
+
+/*
+ * Cliente-foco gate.
+ *
+ * Two distinct visibility attributes share the data-presenter contract:
+ *
+ *   - data-presenter-hide          → hidden in plain Modo Presentación
+ *                                    (e.g. Comisión total, Take rate,
+ *                                    Tasa de éxito — Tikin-internal
+ *                                    revenue/quality KPIs that never
+ *                                    leave the internal view).
+ *
+ *   - data-presenter-empresa-hide  → hidden ONLY in cliente-foco view,
+ *                                    i.e. when Modo Presentación is on
+ *                                    AND a specific empresa is selected.
+ *                                    Used for elements that lose meaning
+ *                                    when the dashboard narrows to one
+ *                                    empresa (no top-empresa rankings,
+ *                                    no empresas-nuevas list, no
+ *                                    "Empresas activas" chart that
+ *                                    degenerates to a flat line at y=1).
+ *
+ * Plans 04-05 (EmpresasActivasChart card) and 04-07 (Inicio hechos
+ * curados container) tag elements with data-presenter-empresa-hide and
+ * inherit this rule — no further CSS or React conditional needed.
+ *
+ * The cliente-foco gate is JS-free: PresenterFrame writes
+ * data-empresa-filter="active" on the wrapper when ?empresa is a
+ * specific empresa id; this selector pairs that with data-presenter="on".
+ */
+[data-presenter="on"][data-empresa-filter="active"] [data-presenter-empresa-hide] {
+  display: none !important;
+}
