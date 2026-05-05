@@ -354,3 +354,80 @@ export function top10RecargasEmpresas(
 ): RecargaByEmpresa[] {
   return rows.slice(0, 10);
 }
+
+// --- Hechos curados ---------------------------------------------------------
+
+/**
+ * Top empresa recargadora del período (by `monto`). Hecho curado for the
+ * Recargas highlight reel (Plan 04-08 page composition / Plan 04-06 UI).
+ *
+ * Returns the highest-monto `RecargaByEmpresa` from the input, or `null`
+ * on empty input. Caller should pass the output of
+ * `aggregateRecargasByEmpresa(filterRecargas(...))` — i.e. already
+ * period-and-empresa-filtered. Since `aggregateRecargasByEmpresa` already
+ * sorts descending by `monto`, this is a trivial first-element pick.
+ *
+ * Design note: in cliente-foco view (`?presenter=1&empresa=$X`), the
+ * filter narrows the dataset to one empresa, so this function returns
+ * "that empresa" (or null if zero recargas in the period). The Plan
+ * 04-06 UI is responsible for hiding the "top empresa recargadora" card
+ * in cliente-foco view via `data-presenter-empresa-hide` — this domain
+ * function stays dumb about presentation context and just answers
+ * "given these aggregated rows, which is on top?".
+ *
+ * @example
+ *   findTopEmpresaRecargadora([
+ *     { empresa_id: '$mario',    ..., monto: 200000, pctDelTotal: 0.667 },
+ *     { empresa_id: '$tikincol', ..., monto: 100000, pctDelTotal: 0.333 },
+ *   ])
+ *   // → { empresa_id: '$mario', ..., monto: 200000, pctDelTotal: 0.667 }
+ *   findTopEmpresaRecargadora([])
+ *   // → null
+ */
+export function findTopEmpresaRecargadora(
+  rows: RecargaByEmpresa[],
+): RecargaByEmpresa | null {
+  return rows.length === 0 ? null : rows[0];
+}
+
+/**
+ * Recarga más grande del período (single transaction with highest
+ * `monto`). Hecho curado for the Recargas highlight reel (Plan 04-08 page
+ * composition / Plan 04-06 UI).
+ *
+ * Returns the single `Transaction` with max `monto`, or `null` on empty
+ * input. Caller passes `filterRecargas(...)` output — i.e. already
+ * filtered to RECHARGE_TIPOS + direction='in' + status='completed' +
+ * period + optional empresa.
+ *
+ * On tie (rare — same monto on two recargas), returns the
+ * chronologically-first (smallest `fecha`) to keep the output
+ * deterministic across renders. The UI displays `monto` + `empresa_nombre`
+ * + `fecha` of the returned transaction.
+ *
+ * Single-pass `reduce` (O(n)).
+ *
+ * @example
+ *   findRecargaMasGrande([
+ *     { monto: 100000, fecha: ..., ... },
+ *     { monto: 500000, fecha: ..., ... },
+ *     { monto: 200000, fecha: ..., ... },
+ *   ])
+ *   // → the 500000 transaction
+ *   findRecargaMasGrande([])
+ *   // → null
+ */
+export function findRecargaMasGrande(
+  recargas: Transaction[],
+): Transaction | null {
+  if (recargas.length === 0) return null;
+  return recargas.reduce<Transaction>((best, cur) => {
+    if (cur.monto > best.monto) return cur;
+    // Tie-break: prefer the chronologically-earlier transaction so output
+    // is deterministic when two recargas share the same monto.
+    if (cur.monto === best.monto && cur.fecha.getTime() < best.fecha.getTime()) {
+      return cur;
+    }
+    return best;
+  }, recargas[0]);
+}
