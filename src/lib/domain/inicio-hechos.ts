@@ -27,6 +27,8 @@
  *     04-04 recargas hechos) don't conflict on file ownership.
  */
 
+import type { DashboardFilters } from "@/lib/url-state";
+
 import type { Transaction } from "./types";
 
 // --- Output types -----------------------------------------------------------
@@ -41,6 +43,28 @@ export interface TopEmpresaResult {
   empresa_nombre: string;
   /** Sum of `monto` across the filtered transactions for this empresa (COP). */
   gmv: number;
+}
+
+/**
+ * One empresa whose first-ever transaction landed in the filter window.
+ * Carried inside `EmpresasNuevasResult.shown`.
+ */
+export interface EmpresaNueva {
+  empresa_id: string;
+  empresa_nombre: string;
+  /** Timestamp of the empresa's earliest-ever transaction in the dataset. */
+  firstTx: Date;
+}
+
+/**
+ * Result shape for `findEmpresasNuevasActivadas` — caps shown to top 5
+ * with overflowCount carrying the rest for the "+N más" display.
+ */
+export interface EmpresasNuevasResult {
+  /** Up to 5 entries, sorted ascending by `firstTx` (earliest activation first). */
+  shown: EmpresaNueva[];
+  /** Total count beyond `shown.length` (i.e. `total - 5`, or 0 if `total ≤ 5`). */
+  overflowCount: number;
 }
 
 // --- Top empresa by GMV -----------------------------------------------------
@@ -122,4 +146,134 @@ export function findTopEmpresaByGMV(
     empresa_nombre: topNombre,
     gmv: topGmv,
   };
+}
+
+// --- Empresas nuevas activadas ---------------------------------------------
+
+/** Maximum number of `EmpresaNueva` entries surfaced in `shown`. */
+const EMPRESAS_NUEVAS_CAP = 5;
+
+/**
+ * Find empresas whose FIRST-EVER transaction in the dataset falls
+ * within the active filter window. Caps shown to top 5 (sorted by
+ * firstTx ascending — earliest activation first); overflowCount
+ * carries the rest for "+N más" display.
+ *
+ * IMPORTANT (Pitfall 5 in 04-RESEARCH.md): callers MUST pass the
+ * FULL transaction dataset (allTx from getCachedTransactions), NOT
+ * the period-filtered subset. If you pass a filtered subset, every
+ * empresa in that subset will appear "new" because their earliest
+ * tx in the filtered subset is by definition in-period.
+ *
+ * Cost: O(N) single pass over allTx (~3188 rows in production), well
+ * under 5ms. No second fetch needed — getCachedTransactions is React
+ * cache()-deduped per request, so this function is callable alongside
+ * other domain reads without quota cost.
+ *
+ * Behavior:
+ *   - Empty/missing window (`filters.from` or `filters.to` undefined or
+ *     unparseable) → returns `{ shown: [], overflowCount: 0 }`. The
+ *     "earliest activation" question requires a defined window; we
+ *     degrade gracefully rather than guess.
+ *   - Empresa filter active (`filters.empresa` set) → results are
+ *     narrowed to that single empresa BEFORE the cap. CONTEXT.md's
+ *     cliente-foco contract hides hechos curados via CSS, but this
+ *     filter ensures sane shape if ever rendered (e.g. if a future
+ *     view drops the CSS hide).
+ *   - No empresas activated in window → returns `{ shown: [],
+ *     overflowCount: 0 }` (caller renders empty-state copy).
+ *
+ * Pure: returns a fresh result object; does not mutate input.
+ *
+ * @example
+ *   findEmpresasNuevasActivadas(allTx, { from: '2026-04-01', to: '2026-04-30' })
+ *   // when $a's earliest tx = 2026-03-15, $b's = 2026-04-10, $c's = 2026-04-25
+ *   // → { shown: [
+ *   //       { empresa_id: '$b', firstTx: 2026-04-10 },
+ *   //       { empresa_id: '$c', firstTx: 2026-04-25 },
+ *   //     ], overflowCount: 0 }
+ */
+export function findEmpresasNuevasActivadas(
+  allTransactions: Transaction[],
+  filters: DashboardFilters,
+): EmpresasNuevasResult {
+  // Window guard: hechos curados are period-relative; without a window
+  // there's no meaningful "new in this period" answer.
+  if (!filters.from || !filters.to) {
+    return { shown: [], overflowCount: 0 };
+  }
+  // Cheap shape check on the date strings to avoid producing an Invalid
+  // Date that silently includes everything (NaN comparisons are always
+  // false, so windowStart=NaN/windowEnd=NaN would filter to []).
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(filters.from) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(filters.to)
+  ) {
+    return { shown: [], overflowCount: 0 };
+  }
+
+  // Bogotá-anchored window bounds. Same literal-offset convention as
+  // bonos.ts and url-state.ts so "the 1st" means the 1st in Bogotá,
+  // not in UTC.
+  const windowStart = new Date(`${filters.from}T00:00:00-05:00`).getTime();
+  const windowEnd = new Date(`${filters.to}T23:59:59.999-05:00`).getTime();
+  if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd)) {
+    return { shown: [], overflowCount: 0 };
+  }
+
+  // Single O(N) pass: track each empresa's earliest-ever transaction.
+  // First-occurrence-wins for empresa_nombre (mirror of empresas.ts /
+  // findTopEmpresaByGMV convention — stable labels across reads).
+  const firstTxByEmpresa = new Map<
+    string,
+    { fecha: Date; nombre: string }
+  >();
+  for (const tx of allTransactions) {
+    const txTime = tx.fecha.getTime();
+    if (!Number.isFinite(txTime)) continue;
+    const cur = firstTxByEmpresa.get(tx.empresa_id);
+    if (!cur || txTime < cur.fecha.getTime()) {
+      firstTxByEmpresa.set(tx.empresa_id, {
+        fecha: tx.fecha,
+        nombre: tx.empresa_nombre || tx.empresa_id,
+      });
+    }
+  }
+
+  // Empresa filter (cliente-foco belt-and-suspenders). The `__all__`
+  // sentinel is used elsewhere in the dashboard for "no narrowing"; we
+  // honor the same convention here even though `filters.empresa` is
+  // typed as `string | undefined` and will normally be undefined when
+  // not narrowing.
+  const empresaFilter =
+    filters.empresa && filters.empresa !== "__all__" ? filters.empresa : null;
+
+  // Filter to empresas whose first-ever tx falls in [windowStart, windowEnd].
+  const inWindow: EmpresaNueva[] = [];
+  for (const [empresa_id, { fecha, nombre }] of firstTxByEmpresa) {
+    if (empresaFilter && empresa_id !== empresaFilter) continue;
+    const txTime = fecha.getTime();
+    if (txTime >= windowStart && txTime <= windowEnd) {
+      inWindow.push({
+        empresa_id,
+        empresa_nombre: nombre,
+        firstTx: fecha,
+      });
+    }
+  }
+
+  // Sort ascending by firstTx — earliest activation first reads as the
+  // most "interesting" because it's the longest-tenured of the new
+  // cohort within the window.
+  inWindow.sort((a, b) => a.firstTx.getTime() - b.firstTx.getTime());
+
+  const shown = inWindow.slice(0, EMPRESAS_NUEVAS_CAP);
+  const overflowCount = Math.max(0, inWindow.length - EMPRESAS_NUEVAS_CAP);
+
+  // Result is intentionally NOT memoized inside this function. The full
+  // dataset pass is O(N) with a tiny per-row cost (single Map lookup +
+  // numeric compare) — well under 5ms on 3188-row production data. The
+  // upstream fetch (getCachedTransactions) is the expensive step and
+  // React `cache()` already dedupes it per request.
+  return { shown, overflowCount };
 }
