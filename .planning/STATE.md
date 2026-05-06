@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-04-27)
 
 **Core value:** Una sola URL donde el equipo de Tikin ve métricas frescas del negocio sin abrir Sheets, presentable cuando se proyecta a clientes.
-**Current focus:** Phase 4 — Inicio + Recargas
+**Current focus:** Phase 5 — Clientes + Domain
 
 ## Current Position
 
