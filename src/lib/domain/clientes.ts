@@ -56,8 +56,14 @@
  *   fees) and would double-count if they triggered "activa".
  */
 
+import { formatInTimeZone } from "date-fns-tz";
+
 import type { Transaction } from "./types";
 import type { DashboardFilters } from "@/lib/url-state";
+
+// --- Constants --------------------------------------------------------------
+
+const BOGOTA_TZ = "America/Bogota";
 
 // --- Date parse helpers -----------------------------------------------------
 
@@ -393,7 +399,118 @@ export function findEmpresa(
   };
 }
 
-// --- Reserved for Task 2 ----------------------------------------------------
-// `aggregateMonthlyActivity` + `MonthlyActivity` will be appended in Task 2,
-// along with the runtime `formatInTimeZone` import from `date-fns-tz` and
-// the `BOGOTA_TZ` constant.
+// --- 12-month per-empresa activity series (CLI-06 profile chart) -----------
+
+/** One bucket on the 12-month per-empresa activity chart. */
+export interface MonthlyActivity {
+  /** ISO month label `yyyy-MM` interpreted in Bogotá. */
+  month: string;
+  /** Sum of activity-counting `monto` for the empresa in that month (COP). */
+  monto: number;
+  /** Count of activity-counting tx for the empresa in that month. */
+  count: number;
+}
+
+/**
+ * Subtract `n` calendar months from a `yyyy-MM` label (Bogotá-month).
+ *
+ * Pure string arithmetic; safe for year boundaries — `subMonthsLabel("2026-01", 1)`
+ * returns `"2025-12"`, `subMonthsLabel("2025-12", -1)` returns `"2026-01"`.
+ *
+ * Algorithm: parse `yyyy` and `mm` (1..12), compute a single integer
+ * `total = year * 12 + (month - 1) - n`, then recompose. The `-1`/`+1`
+ * dance converts between 1-based human months and 0-based modular index.
+ */
+function subMonthsLabel(yyyymm: string, n: number): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(yyyymm);
+  if (!m) {
+    throw new Error(`Invalid yyyy-MM label: ${yyyymm}`);
+  }
+  const year = Number.parseInt(m[1] as string, 10);
+  const month = Number.parseInt(m[2] as string, 10); // 1..12
+  // Convert to a 0-based total-month index, subtract n, recompose.
+  const total = year * 12 + (month - 1) - n;
+  // JS modulo with negatives: ensure non-negative remainder by adding 12.
+  const newYear = Math.floor(total / 12);
+  const newMonth0 = ((total % 12) + 12) % 12; // 0..11
+  return `${String(newYear).padStart(4, "0")}-${String(newMonth0 + 1).padStart(2, "0")}`;
+}
+
+/**
+ * 12-month per-empresa activity series for the profile chart (CLI-06).
+ *
+ * Algorithm:
+ *   1. Compute the 12-month window ending at `asOf` (Bogotá month). Default
+ *      `asOf = new Date()`. Window includes `asOf`'s month + the prior 11.
+ *   2. Filter transactions to: `empresa_id === empresaId` AND `isActivityCounting`.
+ *   3. Group by Bogotá month (`formatInTimeZone(t.fecha, BOGOTA_TZ, "yyyy-MM")`).
+ *   4. Zero-fill: emit ALL 12 months, even if some have zero `count` / `monto`.
+ *      Without zero-fill, gap months would be invisible — the chart needs
+ *      a continuous time axis to read "this empresa stopped transacting in X".
+ *   5. Sort ascending by `month`.
+ *
+ * Empty input or unknown empresa → returns 12 zero-rows for the right window.
+ * The chart leaf can rely on `result.length === 12` and skip empty-state
+ * branching.
+ *
+ * Pure: does not mutate `transactions`. Reads `asOf ?? new Date()` once at
+ * call time; same input always produces the same output for a given `asOf`.
+ *
+ * @example
+ *   aggregateMonthlyActivity(allTx, '$mario', new Date('2026-04-15T15:00:00-05:00'))
+ *   // → [
+ *   //     { month: '2025-05', monto: 0,       count: 0 },
+ *   //     { month: '2025-06', monto: 250000,  count: 3 },
+ *   //     ...
+ *   //     { month: '2026-04', monto: 1200000, count: 18 },
+ *   //   ]
+ *   // (always 12 entries, sorted ascending)
+ */
+export function aggregateMonthlyActivity(
+  transactions: Transaction[],
+  empresaId: string,
+  asOf?: Date,
+): MonthlyActivity[] {
+  // 1. Anchor month + 12 ascending labels.
+  const anchor = asOf ?? new Date();
+  const anchorMonth = formatInTimeZone(anchor, BOGOTA_TZ, "yyyy-MM");
+  // Generate 12 labels from oldest (anchor - 11) to newest (anchor).
+  const labels: string[] = [];
+  for (let i = 11; i >= 0; i -= 1) {
+    labels.push(subMonthsLabel(anchorMonth, i));
+  }
+
+  // 2. Initialize a Map<label, MonthlyActivity> with zero-filled buckets.
+  const buckets = new Map<string, MonthlyActivity>();
+  for (const label of labels) {
+    buckets.set(label, { month: label, monto: 0, count: 0 });
+  }
+
+  // 3. Defensive: empty empresaId → return zero-filled labels (degrades
+  //    gracefully; the chart can render the empty axis).
+  if (!empresaId || empresaId.trim().length === 0) {
+    return Array.from(buckets.values()).sort((a, b) =>
+      a.month < b.month ? -1 : a.month > b.month ? 1 : 0,
+    );
+  }
+
+  // 4. Single pass: increment matching buckets.
+  for (const t of transactions) {
+    if (t.empresa_id !== empresaId) continue;
+    if (!isActivityCounting(t)) continue;
+
+    const ts = t.fecha.getTime();
+    if (!Number.isFinite(ts)) continue;
+
+    const monthLabel = formatInTimeZone(t.fecha, BOGOTA_TZ, "yyyy-MM");
+    const bucket = buckets.get(monthLabel);
+    if (!bucket) continue; // tx outside the 12-month window — silently dropped
+    bucket.count += 1;
+    bucket.monto += t.monto;
+  }
+
+  // 5. Sort ascending by month label (string compare is correct for yyyy-MM).
+  return Array.from(buckets.values()).sort((a, b) =>
+    a.month < b.month ? -1 : a.month > b.month ? 1 : 0,
+  );
+}
