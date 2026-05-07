@@ -28,6 +28,8 @@ import {
   EmpresaFilter,
   type EmpresaOption,
 } from "@/components/filters/empresa-filter";
+import { StatusFilter } from "@/components/filters/status-filter";
+import { TypeFilter } from "@/components/filters/type-filter";
 import { LastRefresh } from "@/components/layout/last-refresh";
 import { PresenterToggle } from "@/components/layout/presenter-toggle";
 import { getEmpresaRegistry } from "@/lib/domain/empresas";
@@ -60,6 +62,8 @@ export async function DashboardHeader() {
         >
           <DateRangePicker />
           <EmpresaFilter empresas={empresas} />
+          <StatusFilter />
+          <TypeFilter />
         </div>
 
         <div className="ml-auto flex items-center gap-4">
