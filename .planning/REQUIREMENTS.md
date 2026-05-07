@@ -31,24 +31,24 @@
 
 ### Bonos (rebuilt — split source/destination)
 
-- [ ] **BON-V2-01**: Total bonos recibidos (BONUS · direction=in · tikintag = `destination_transfer_tikintag`)
-- [ ] **BON-V2-02**: Total bonos enviados (BONUS · direction=out · tikintag = `source_transfer_tikintag`)
-- [ ] **BON-V2-03**: Volumen total en bonos COP, dividido emitidos / recibidos
-- [ ] **BON-V2-04**: Ticket promedio por bono
-- [ ] **BON-V2-05**: Top emisores de bonos
-- [ ] **BON-V2-06**: Top receptores de bonos
-- [ ] **BON-V2-07**: Flujo de bonos en el tiempo (barras apiladas enviados vs recibidos)
+- [x] **BON-V2-01**: Total bonos recibidos (BONUS · direction=in · tikintag = `destination_transfer_tikintag`)
+- [x] **BON-V2-02**: Total bonos enviados (BONUS · direction=out · tikintag = `source_transfer_tikintag`)
+- [x] **BON-V2-03**: Volumen total en bonos COP, dividido emitidos / recibidos
+- [x] **BON-V2-04**: Ticket promedio por bono
+- [x] **BON-V2-05**: Top emisores de bonos
+- [x] **BON-V2-06**: Top receptores de bonos
+- [x] **BON-V2-07**: Flujo de bonos en el tiempo (barras apiladas enviados vs recibidos)
 
 ### Payouts (extended)
 
-- [ ] **PAY-V2-01**: 3 KPIs por estado con color verde/rojo/amarillo. Baseline: completed 728 · failed 63 · in_progress 7
-- [ ] **PAY-V2-02**: Tasa de éxito de payouts (KPI + semáforo). Baseline: 91.2%
-- [ ] **PAY-V2-03**: Tiempo promedio de procesamiento (parsing `Total Time`)
-- [ ] **PAY-V2-04**: Payouts pendientes con aging (tabla urgente, alert si superan 2h)
-- [ ] **PAY-V2-05**: Distribución por banco destino (top 5 + Otros, barras horizontales). Baseline: Nequi 54.6% (436/798)
-- [ ] **PAY-V2-06**: Razones de fallo (`Failure Reason` — barras + tabla). Baseline: Balance insuficiente más común (29 casos)
-- [ ] **PAY-V2-07**: Volumen total retirado COP (parsing `Value`)
-- [ ] **PAY-V2-08**: Pagos a terceros — Holder ≠ tikintag solicitante (KPI + tabla via JOIN `transaction_id`)
+- [x] **PAY-V2-01**: 3 KPIs por estado con color verde/rojo/amarillo. Baseline: completed 728 · failed 63 · in_progress 7
+- [x] **PAY-V2-02**: Tasa de éxito de payouts (KPI + semáforo). Baseline: 91.2%
+- [x] **PAY-V2-03**: Tiempo promedio de procesamiento (parsing `Total Time`)
+- [x] **PAY-V2-04**: Payouts pendientes con aging (tabla urgente, alert si superan 2h)
+- [x] **PAY-V2-05**: Distribución por banco destino (top 5 + Otros, barras horizontales). Baseline: Nequi 54.6% (436/798)
+- [x] **PAY-V2-06**: Razones de fallo (`Failure Reason` — barras + tabla). Baseline: Balance insuficiente más común (29 casos)
+- [x] **PAY-V2-07**: Volumen total retirado COP (parsing `Value`)
+- [x] **PAY-V2-08**: Pagos a terceros — Holder ≠ tikintag solicitante (KPI + tabla via JOIN `transaction_id`)
 
 ### Uso Tarjeta (NEW — replaces v1.0 Recargas slot in tab order)
 
@@ -132,21 +132,21 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 | CROSS-V2-05 | Phase 6 | Complete |
 | CROSS-V2-06 | Phase 6 | Complete |
 | CROSS-V2-07 | Phase 6 | Complete |
-| BON-V2-01   | Phase 7 | Pending |
-| BON-V2-02   | Phase 7 | Pending |
-| BON-V2-03   | Phase 7 | Pending |
-| BON-V2-04   | Phase 7 | Pending |
-| BON-V2-05   | Phase 7 | Pending |
-| BON-V2-06   | Phase 7 | Pending |
-| BON-V2-07   | Phase 7 | Pending |
-| PAY-V2-01   | Phase 7 | Pending |
-| PAY-V2-02   | Phase 7 | Pending |
-| PAY-V2-03   | Phase 7 | Pending |
-| PAY-V2-04   | Phase 7 | Pending |
-| PAY-V2-05   | Phase 7 | Pending |
-| PAY-V2-06   | Phase 7 | Pending |
-| PAY-V2-07   | Phase 7 | Pending |
-| PAY-V2-08   | Phase 7 | Pending |
+| BON-V2-01   | Phase 7 | Complete |
+| BON-V2-02   | Phase 7 | Complete |
+| BON-V2-03   | Phase 7 | Complete |
+| BON-V2-04   | Phase 7 | Complete |
+| BON-V2-05   | Phase 7 | Complete |
+| BON-V2-06   | Phase 7 | Complete |
+| BON-V2-07   | Phase 7 | Complete |
+| PAY-V2-01   | Phase 7 | Complete |
+| PAY-V2-02   | Phase 7 | Complete |
+| PAY-V2-03   | Phase 7 | Complete |
+| PAY-V2-04   | Phase 7 | Complete |
+| PAY-V2-05   | Phase 7 | Complete |
+| PAY-V2-06   | Phase 7 | Complete |
+| PAY-V2-07   | Phase 7 | Complete |
+| PAY-V2-08   | Phase 7 | Complete |
 | CARD-V2-01  | Phase 8 | Pending |
 | CARD-V2-02  | Phase 8 | Pending |
 | CARD-V2-03  | Phase 8 | Pending |

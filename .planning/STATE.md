@@ -14,7 +14,7 @@ Plan: 07-02 complete (Bonos page v2 ranking-first cockpit) AND 07-04 complete (P
 Status: Phase 7 100% complete — ready to plan Phase 8 per ROADMAP.md
 Last activity: 2026-05-07 — Completed 07-02-PLAN.md (Bonos page v2 — RANKING-FIRST cockpit: KPICardsV2 + TopEmisores | TopReceptores side-by-side + BonosFlowChart stacked timeline; 4 v1 components deleted; v1 domain fns DEFERRED for follow-up plan because clientes/[empresaId]/page.tsx + EmpresaMiniCards.tsx still consume them)
 
-Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 1/5 phases shipped + Phase 7 4/4 plans · Phase 7: 4/4 plans ████ (100%)
+Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 2/5 phases shipped (40%) · Phase 7: 4/4 plans ████ (100%) ✅ verified + human-approved
 
 ## Performance Metrics
 
