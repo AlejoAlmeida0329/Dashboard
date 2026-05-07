@@ -81,6 +81,41 @@ export const formatPercent = (n: number | null | undefined): string => {
 };
 
 /**
+ * Format a number of minutes for KPI display.
+ *
+ * Examples:
+ *   formatMinutes(0)      → "—"        (em-dash, our standard "no data" marker)
+ *   formatMinutes(0.5)    → "<1 min"
+ *   formatMinutes(3.7)    → "4 min"
+ *   formatMinutes(45)     → "45 min"
+ *   formatMinutes(125)    → "2h 5min"
+ *   formatMinutes(180)    → "3h"
+ *   formatMinutes(1440)   → "1d"
+ *   formatMinutes(2880)   → "2d"
+ *   formatMinutes(null)   → "—"
+ *   formatMinutes(NaN)    → "—"
+ *
+ * Used by the v2 Payouts cockpit (Plan 07-04 PAY-V2-03 "tiempo promedio")
+ * + the AgingAlert table. Mirrors the formatDuration policy below: a
+ * single shape across the dashboard, em-dash for missing/zero rather than
+ * "0 min" or "NaN min".
+ */
+export const formatMinutes = (m: number | null | undefined): string => {
+  if (m === null || m === undefined) return "—";
+  if (!Number.isFinite(m)) return "—";
+  if (m === 0) return "—";
+  if (m < 1) return "<1 min";
+  if (m < 60) return `${Math.round(m)} min`;
+  if (m < 1440) {
+    const h = Math.floor(m / 60);
+    const mm = Math.round(m - h * 60);
+    return mm > 0 ? `${h}h ${mm}min` : `${h}h`;
+  }
+  const d = Math.round(m / 1440);
+  return `${d}d`;
+};
+
+/**
  * `formatDuration(720)` → `'0:12:00'`
  * `formatDuration(3661)` → `'1:01:01'`
  * `formatDuration(90061)` → `'25:01:01'` (no day rollover; ops-friendly continuous hours)
