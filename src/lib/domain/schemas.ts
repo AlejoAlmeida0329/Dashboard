@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { parseCOPAmount, parsePgIntervalSeconds } from "./parsers";
 import type {
   Payout,
   PayoutState,
@@ -247,16 +248,17 @@ const KNOWN_PAYOUT_STATES: readonly PayoutState[] = [
 ];
 
 /**
- * Parse a BD_Payouts COP-formatted string to a number.
+ * Zod-friendly wrapper around `parseCOPAmount` (from `./parsers`).
  *
  * BD_Payouts stores `Value` and `Transaction Cost` as pre-formatted
  * strings like `"COP 200,000.00"`, `"COP 5,229.46"`, `"COP 1,500,000.00"`.
  * UNFORMATTED_VALUE doesn't strip the formatting because the cell is
  * actually a TEXT cell upstream (probably from a Looker / report export).
  *
- * Strategy: strip non-digit/decimal/sign chars (handles "COP", spaces,
- * thousands separators), then `Number()`. Empty / NaN / Infinity yields
- * a parse error so the row is skipped (mirrors Money's behavior).
+ * `parseCOPAmount` returns `null` for empty / non-finite inputs; here we
+ * map that to a Zod custom issue so the row is skipped (mirrors Money's
+ * behavior). Behavior preserved verbatim from the original inline
+ * implementation against 798 production rows.
  *
  * Examples:
  *   "COP 200,000.00" → 200000
@@ -266,70 +268,32 @@ const KNOWN_PAYOUT_STATES: readonly PayoutState[] = [
 const MoneyFromCOP = z
   .union([z.string(), z.number()])
   .transform((v, ctx): number => {
-    if (typeof v === "number") {
-      if (!Number.isFinite(v)) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Money is not finite",
-        });
-        return z.NEVER;
-      }
-      return v;
-    }
-    // Strip "COP", spaces, and thousands separators (commas).
-    // Keep digits, sign, and decimal point.
-    const cleaned = v.replace(/[^0-9.\-]/g, "");
-    if (cleaned.length === 0) {
-      ctx.addIssue({
-        code: "custom",
-        message: `Money string had no parseable digits: "${v}"`,
-      });
-      return z.NEVER;
-    }
-    const n = Number(cleaned);
-    if (!Number.isFinite(n)) {
-      ctx.addIssue({
-        code: "custom",
-        message: `Money string parsed to non-finite number: "${v}"`,
-      });
+    const n = parseCOPAmount(v);
+    if (n === null) {
+      const message =
+        typeof v === "number"
+          ? "Money is not finite"
+          : v.replace(/[^0-9.\-]/g, "").length === 0
+          ? `Money string had no parseable digits: "${v}"`
+          : `Money string parsed to non-finite number: "${v}"`;
+      ctx.addIssue({ code: "custom", message });
       return z.NEVER;
     }
     return n;
   });
 
 /**
- * Parse a PostgreSQL interval string to seconds.
+ * Parse a PostgreSQL interval string to SECONDS — thin delegate to
+ * `parsePgIntervalSeconds` in `./parsers`.
  *
- * BD_Payouts stores `Aging` and `Total Time` as PostgreSQL interval
- * strings like `"0 years 0 mons 12 days 20 hours 30 mins 38.656877 secs"`.
- * Empty string is a valid input (returns 0) — `Total Time` is empty for
- * non-completed payouts; the consumer (Plan 03-02) filters those out
- * before percentile.
- *
- * Years and months are converted with average lengths (365.25 d, 30.44 d)
- * for defensive correctness; in practice 798/798 production rows have
- * `0 years 0 mons` so the y/mo factors never matter.
- *
- * Returns NaN if the format doesn't match — caller decides whether to
- * skip or fall back. The Payout schema falls back from Total Time to
- * Aging if Total Time is empty/NaN.
+ * Kept in this file as a one-liner so the `aging` / `total time` Zod
+ * transforms below stay readable, and so the seconds-based contract for
+ * `Payout.latencySeconds` is explicit at the call site (parsers.ts also
+ * exposes minute-returning APIs for v2.0 consumers — schemas.ts is the
+ * one place that still needs seconds).
  */
 function parsePgInterval(s: unknown): number {
-  if (typeof s !== "string") return NaN;
-  const trimmed = s.trim();
-  if (trimmed === "") return 0;
-  const m = trimmed.match(
-    /(-?\d+)\s+years?\s+(-?\d+)\s+mons?\s+(-?\d+)\s+days?\s+(-?\d+)\s+hours?\s+(-?\d+)\s+mins?\s+(-?\d+(?:\.\d+)?)\s+secs?/i,
-  );
-  if (!m) return NaN;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const h = Number(m[4]);
-  const mi = Number(m[5]);
-  const se = Number(m[6]);
-  // 365.25 d/y, 30.44 d/mo (average) — defensive; real data has y=mo=0.
-  return y * 365.25 * 86400 + mo * 30.44 * 86400 + d * 86400 + h * 3600 + mi * 60 + se;
+  return parsePgIntervalSeconds(s);
 }
 
 /**
