@@ -1,9 +1,9 @@
 /**
  * URL state helpers for dashboard filters.
  *
- * The dashboard stores all filter state (date range, empresa, presenter
- * mode) in URL searchParams — never in component-local React state.
- * Reasons:
+ * The dashboard stores all filter state (date range, empresa, status,
+ * tipo, presenter mode) in URL searchParams — never in component-local
+ * React state. Reasons:
  *   - Sticky across navigation: clicking from /inicio to /bonos with a
  *     ?from/&to filter preserves the range without an effect or context.
  *   - Shareable: a URL pasted into Slack reproduces the exact view.
@@ -13,6 +13,17 @@
  * `parseFilters(searchParams)` is the canonical way to read filters in a
  * Server Component. `buildUrl(pathname, filters)` is the canonical way
  * for a Client Component to build the next URL when a filter changes.
+ *
+ * Multi-select filters (`status`, `tipo`) are serialized as
+ * comma-separated values: `?status=completed,failed&tipo=BONUS,P2P`.
+ * CSV (instead of repeated keys like `?status=completed&status=failed`)
+ * keeps URLs short, human-readable, and trivially copy-pasteable. An
+ * empty array is omitted from the URL — "no filter applied" and "absent
+ * key" are treated identically by `parseFilters`.
+ *
+ * URL ordering is stable: from → to → empresa → status → tipo →
+ * presenter. Stable order keeps URLs canonical for the proxy cache and
+ * makes diffs in browser history readable.
  *
  * `presetDateRange` produces ranges anchored to "today in Bogotá" — not
  * UTC and not the server's local TZ — to ensure that "Last 7 days"
@@ -29,6 +40,8 @@ export type DashboardFilters = {
   from?: string; // 'YYYY-MM-DD' (Bogotá calendar date)
   to?: string; // 'YYYY-MM-DD'
   empresa?: string; // empresa_id, opaque to the URL layer
+  status?: string[]; // CROSS-V2-01 — multi-select: ['completed','failed','in_progress']
+  tipo?: string[]; // CROSS-V2-02 — multi-select: ['BONUS','P2P','PAYOUT_BANK',...]
   presenter?: "1"; // canonical "on" value — anything else means off
 };
 
@@ -44,6 +57,25 @@ const getOne = (
 };
 
 /**
+ * Read a comma-separated multi-select param. Returns `undefined` when
+ * the key is absent OR when the parsed array is empty (e.g. `?status=`
+ * or `?status=,,`). "Absent" and "empty set" are treated identically —
+ * both mean "no filter applied".
+ */
+const getCSV = (
+  searchParams: Record<string, string | string[] | undefined>,
+  k: string,
+): string[] | undefined => {
+  const raw = getOne(searchParams, k);
+  if (!raw) return undefined;
+  const parts = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return parts.length > 0 ? parts : undefined;
+};
+
+/**
  * Read DashboardFilters from a Next.js searchParams object. Tolerates
  * the fact that searchParams values can be `string | string[] |
  * undefined` (Next normalizes repeated query keys to an array) by
@@ -56,14 +88,20 @@ export function parseFilters(
     from: getOne(searchParams, "from"),
     to: getOne(searchParams, "to"),
     empresa: getOne(searchParams, "empresa"),
+    status: getCSV(searchParams, "status"),
+    tipo: getCSV(searchParams, "tipo"),
     presenter: getOne(searchParams, "presenter") === "1" ? "1" : undefined,
   };
 }
 
 /**
  * Build a URL for `pathname` with `filters` serialized in a stable
- * order (from, to, empresa, presenter). Stable order keeps URLs
- * canonical for the proxy cache and for human readability.
+ * order (from, to, empresa, status, tipo, presenter). Stable order
+ * keeps URLs canonical for the proxy cache and for human readability.
+ *
+ * Multi-select filters (`status`, `tipo`) are serialized as
+ * comma-separated values; an empty array is omitted entirely so the
+ * URL stays clean when no filter is applied.
  *
  * Returns just `pathname` when no filters are set (no trailing `?`).
  */
@@ -72,6 +110,10 @@ export function buildUrl(pathname: string, filters: DashboardFilters): string {
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   if (filters.empresa) params.set("empresa", filters.empresa);
+  if (filters.status && filters.status.length > 0)
+    params.set("status", filters.status.join(","));
+  if (filters.tipo && filters.tipo.length > 0)
+    params.set("tipo", filters.tipo.join(","));
   if (filters.presenter === "1") params.set("presenter", "1");
   const qs = params.toString();
   return qs ? `${pathname}?${qs}` : pathname;
