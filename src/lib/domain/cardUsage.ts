@@ -219,3 +219,162 @@ export function summarizePurchases(rows: Transaction[]): PurchaseSummary {
   const ticketPromedio = totalCompras > 0 ? volumenCOP / totalCompras : 0;
   return { totalCompras, volumenCOP, ticketPromedio };
 }
+
+// --- Bogotá date formatting (local helper for by-date aggregation) ---------
+
+/**
+ * Format a Date as a Bogotá `YYYY-MM-DD` string. Local helper instead of
+ * pulling in `formatInTimeZone` from `date-fns-tz` to keep this module's
+ * import surface minimal — Bogotá is +/-5h from UTC with no DST, so the
+ * arithmetic is straightforward and deterministic.
+ *
+ * Equivalent to `formatInTimeZone(d, "America/Bogota", "yyyy-MM-dd")` for
+ * any finite Date; returns `'1970-01-01'` for an invalid Date so a
+ * pathological row can't crash the chart.
+ */
+function toBogotaISODate(d: Date): string {
+  const t = d.getTime();
+  if (!Number.isFinite(t)) return "1970-01-01";
+  // Shift the instant by -5h (UTC-5) so the resulting UTC fields align
+  // with the Bogotá wall-clock fields, then read the UTC parts.
+  const shifted = new Date(t - 5 * 60 * 60 * 1000);
+  const yyyy = shifted.getUTCFullYear();
+  const mm = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// --- Aggregations -----------------------------------------------------------
+
+/**
+ * Compute Uso Tarjeta adoption KPI (CARD-V2-04 — "% usuarios con ≥1
+ * compra en el periodo").
+ *
+ * Two-input signature is deliberate:
+ *   - `purchaseRows` = the PURCHASE direction=out filtered set (numerator).
+ *   - `allTx` = the broader user pool the page is scoping to (denominator —
+ *     typically the same period-filtered superset the page uses for any
+ *     other Inicio-style cross-cut). The caller MUST pre-filter `allTx`
+ *     to the same period the page is showing; this function does NOT
+ *     re-filter internally because the page is the budget-keeper for
+ *     period-scoping (one filter pass, multiple aggregations).
+ *
+ * Both numerator and denominator count distinct `tikintag` values
+ * (rows with empty/falsy tikintag are skipped — defensive against future
+ * schema gaps; in practice every BD_Plataforma row has a tikintag).
+ *
+ * Order-of-magnitude calibration (PRD baseline 2026-05): roughly 40
+ * usuarios con compra / 235 usuarios totales ≈ 17%. Live ratio depends
+ * on the active period filter; this helper's job is to compute the
+ * fraction for whatever period the page is on.
+ *
+ * Pure. Empty inputs → `{ usersWithPurchase: 0, totalUsers: 0,
+ * adoptionRate: 0 }` (no NaN / Infinity).
+ */
+export function aggregatePurchaseAdoption(
+  allTx: Transaction[],
+  purchaseRows: Transaction[],
+): PurchaseAdoption {
+  const purchaseTikintags = new Set<string>();
+  for (const t of purchaseRows) {
+    if (t.tikintag) purchaseTikintags.add(t.tikintag);
+  }
+  const totalTikintags = new Set<string>();
+  for (const t of allTx) {
+    if (t.tikintag) totalTikintags.add(t.tikintag);
+  }
+  const usersWithPurchase = purchaseTikintags.size;
+  const totalUsers = totalTikintags.size;
+  const adoptionRate = totalUsers > 0 ? usersWithPurchase / totalUsers : 0;
+  return { usersWithPurchase, totalUsers, adoptionRate };
+}
+
+/**
+ * Group purchases by Bogotá calendar date, producing one bucket per day
+ * that has data (CARD-V2-05 — "tendencia temporal").
+ *
+ * NO zero-fill at this layer. Days with zero compras simply don't appear;
+ * the chart leaf in Plan 08-02 handles its own empty-axis spacing — same
+ * convention as `aggregateRecargasByDate` and `aggregateBonosByDateV2`.
+ *
+ * NO granularity argument. CARD-V2-05 mentions "granularidad día / semana /
+ * mes", but that re-bucketing is a UI/leaf concern (same as Inicio v1's
+ * TimelineChart). Domain emits daily; the chart re-buckets to weekly /
+ * monthly when the user picks that toggle.
+ *
+ * Output sorted ASCENDING by `date` so a line chart can plot it without
+ * re-sorting. Empty input → `[]`.
+ */
+export function aggregatePurchasesByDate(
+  rows: Transaction[],
+): PurchaseByDate[] {
+  const byDay = new Map<string, PurchaseByDate>();
+  for (const r of rows) {
+    const date = toBogotaISODate(r.fecha);
+    const cur = byDay.get(date);
+    if (cur) {
+      cur.compras += 1;
+      cur.volumenCOP += Math.abs(r.monto);
+    } else {
+      byDay.set(date, { date, compras: 1, volumenCOP: Math.abs(r.monto) });
+    }
+  }
+  return Array.from(byDay.values()).sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
+}
+
+/**
+ * Top-N tikintags ranked by card-spend volume (CARD-V2-06).
+ *
+ * Groups by `t.tikintag` (the user spending). Rows where tikintag is
+ * empty/falsy are skipped — defensive: a peer-less row cannot be
+ * attributed to a user. Per group: count + sum(|monto|) +
+ * ticketPromedio (volumen / count) + first-row's `empresa_nombre` as a
+ * best-effort label.
+ *
+ * Sorted DESCENDING by `volumenCOP`; ties broken by `compras` DESC so
+ * output is deterministic across renders. Sliced to `limit` (default 10
+ * per CARD-V2-06).
+ *
+ * `empresa: string | undefined` because in a future schema where empresa
+ * is a separate display column it may be absent for some rows. Today
+ * (Phase 2 default) `empresa_nombre === tikintag` for every row so this
+ * field is always populated — but the type signature stays defensive
+ * for the eventual schema evolution.
+ *
+ * Pure. Empty input → `[]`. O(n + k log k) where k = distinct tikintags.
+ */
+export function aggregateTopCardUsers(
+  rows: Transaction[],
+  limit: number = 10,
+): TopCardUser[] {
+  const acc = new Map<string, TopCardUser>();
+  for (const r of rows) {
+    if (!r.tikintag) continue;
+    const cur = acc.get(r.tikintag);
+    const amount = Math.abs(r.monto);
+    if (cur) {
+      cur.compras += 1;
+      cur.volumenCOP += amount;
+    } else {
+      acc.set(r.tikintag, {
+        tikintag: r.tikintag,
+        empresa: r.empresa_nombre || undefined,
+        compras: 1,
+        volumenCOP: amount,
+        ticketPromedio: 0, // filled in second pass
+      });
+    }
+  }
+  const out = Array.from(acc.values());
+  for (const row of out) {
+    row.ticketPromedio = row.compras > 0 ? row.volumenCOP / row.compras : 0;
+  }
+  out.sort((a, b) =>
+    b.volumenCOP !== a.volumenCOP
+      ? b.volumenCOP - a.volumenCOP
+      : b.compras - a.compras,
+  );
+  return out.slice(0, limit);
+}
