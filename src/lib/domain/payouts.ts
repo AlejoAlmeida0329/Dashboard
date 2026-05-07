@@ -53,6 +53,7 @@
 
 import type { DashboardFilters } from "@/lib/url-state";
 
+import type { JoinedPayout } from "./join";
 import type { Payout, PayoutState } from "./types";
 
 // --- Constants --------------------------------------------------------------
@@ -823,5 +824,103 @@ export function aggregateAgingAlertPending(
     });
   }
   out.sort((a, b) => b.agingMinutes - a.agingMinutes);
+  return out;
+}
+
+/**
+ * Group failed payouts by `failureReason`, returning rows with `count` +
+ * `monto` (PAY-V2-06).
+ *
+ * Behavior:
+ *   - Filters input to `state === 'failed'` defensively.
+ *   - Rows whose `failureReason` is undefined or empty are bucketed under
+ *     the literal label `"Sin razón"` (Spanish — UI surface). Captured
+ *     production data shows that ~85 % of failed rows have a populated
+ *     reason (the most common being "Balance insuficiente" per
+ *     REQUIREMENTS.md baseline). The "Sin razón" bucket exists so
+ *     reason-less failures still surface in the breakdown rather than
+ *     silently disappearing.
+ *   - Returns rows sorted DESC by `count` (ties broken by `monto` DESC).
+ *   - Empty input → `[]`.
+ *
+ * Pure. O(n + k log k) where k = distinct reasons.
+ */
+export function aggregateFailureReasons(
+  payouts: Payout[],
+): FailureReasonRow[] {
+  const acc = new Map<string, FailureReasonRow>();
+  for (const p of payouts) {
+    if (p.state !== "failed") continue;
+    const raw = p.failureReason ? p.failureReason.trim() : "";
+    const reason = raw.length > 0 ? raw : "Sin razón";
+    const cur = acc.get(reason);
+    if (cur) {
+      cur.count += 1;
+      cur.monto += p.monto;
+    } else {
+      acc.set(reason, { reason, count: 1, monto: p.monto });
+    }
+  }
+  const rows = Array.from(acc.values());
+  rows.sort((a, b) =>
+    b.count !== a.count ? b.count - a.count : b.monto - a.monto,
+  );
+  return rows;
+}
+
+/**
+ * Identify payouts whose `holder` (cardholder full name) does NOT match
+ * the originating transaction's `tikintag` — i.e. third-party withdrawals
+ * (PAY-V2-08).
+ *
+ * Algorithm:
+ *   1. JOIN payouts ↔ transactions via `joinPayouts()` (Plan 06-02
+ *      canonical helper). Unmatched payouts (~3.1% historic rate per
+ *      Plan 06-02 SUMMARY) are SKIPPED — without a matched transaction
+ *      we can't determine the requesting tikintag, so we cannot make the
+ *      third-party determination either way. They are NOT counted as
+ *      first-party.
+ *   2. Compare `payout.holder` (lowercased + trimmed) to
+ *      `joined.transaction.tikintag` (lowercased + trimmed). When the
+ *      tikintag begins with `$` (the on-Sheet convention — see Plan 02-01
+ *      SUMMARY), strip the leading `$` before comparison. Holder is a
+ *      full name like `"Angela Yaneth leal liberato"`; tikintag is a
+ *      handle like `"$liftit_admin"`. They almost never match — but
+ *      when they DO match (rare; e.g. `$mario` ↔ `"mario"`), exclude
+ *      that payout from the third-party set.
+ *   3. Return matched-and-mismatched rows as `ThirdPartyPayoutRow[]`,
+ *      sorted DESC by `monto` (largest third-party transfer first).
+ *
+ * Note on completed-vs-all: this function does NOT pre-filter by state.
+ * Page composition decides whether to feed it the completed-only set
+ * (the most natural UI semantic — "third-party transfers that actually
+ * settled") or the period-only set (audit perspective — "all attempted
+ * third-party transfers including those that failed"). Plan 07-04 will
+ * use the completed-only set per PAY-V2-08 KPI semantics.
+ *
+ * Pure. O(n + m) — same as `joinPayouts`. Returns a new array.
+ */
+export function aggregateThirdPartyPayouts(
+  joined: JoinedPayout[],
+): ThirdPartyPayoutRow[] {
+  const out: ThirdPartyPayoutRow[] = [];
+  for (const j of joined) {
+    if (!j.transaction) continue;
+    const holderNorm = j.holder.trim().toLowerCase();
+    const rawTag = j.transaction.tikintag.trim().toLowerCase();
+    const tagNorm = rawTag.startsWith("$") ? rawTag.slice(1) : rawTag;
+    if (holderNorm.length === 0 || tagNorm.length === 0) continue;
+    if (holderNorm === tagNorm) continue;
+    out.push({
+      transactionId: j.transactionId,
+      fecha: j.fecha,
+      holder: j.holder,
+      tikintag: j.transaction.tikintag,
+      monto: j.monto,
+      medium: j.medium,
+      state: j.state,
+    });
+  }
+  out.sort((a, b) => b.monto - a.monto);
   return out;
 }
