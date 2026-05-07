@@ -237,6 +237,28 @@ export interface Transaction {
   tikintag: string;
   /** Raw account_id value (always available). Useful for joins / Phase 5 customer mapping. */
   accountId: string;
+  /**
+   * `source_transfer_tikintag` from BD_Plataforma — the SENDER's tikintag
+   * for BONUS / P2P direction=out rows (also populated for some other
+   * transfer-shaped rows). Undefined when the source row's cell is empty
+   * or absent (e.g. PURCHASE rows where there is no peer tikintag).
+   *
+   * v2 Bonos (BON-V2-05) ranks top emisores by this field — irrespective
+   * of `direction` — because both BONUS-out (sent by this tikintag) AND
+   * BONUS-in (received by some tikintag, sent by ANOTHER) carry the
+   * sender on this column.
+   */
+  sourceTransferTikintag?: string;
+  /**
+   * `destination_transfer_tikintag` from BD_Plataforma — the RECEIVER's
+   * tikintag for BONUS / P2P direction=in rows (also populated for some
+   * other transfer-shaped rows). Undefined when the source row's cell is
+   * empty or absent.
+   *
+   * v2 Bonos (BON-V2-06) ranks top receptores by this field — irrespective
+   * of `direction`.
+   */
+  destinationTransferTikintag?: string;
   /** Reference / batch_reference from raw row, useful for joins to BD_Payouts. */
   reference?: string;
   /** Present when this row is a payout-shaped transaction. Phase 3 derives from BD_Payouts.Destination Medium. */

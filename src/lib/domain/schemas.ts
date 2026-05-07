@@ -182,6 +182,8 @@ export const TransactionRowSchema = z
       status: parsed.status,
       tikintag: parsed.tikintag,
       accountId: parsed.account_id,
+      sourceTransferTikintag: parsed.source_transfer_tikintag,
+      destinationTransferTikintag: parsed.destination_transfer_tikintag,
       // SINGLE-POINT OVERRIDE for empresa identity. Default = tikintag.
       // To switch to account_id, change BOTH lines below to `parsed.account_id`.
       // No other file needs to change. See 02-01-SUMMARY.md "Empresa identity
