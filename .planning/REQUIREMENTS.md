@@ -12,13 +12,13 @@
 
 ### Cross-cutting
 
-- [ ] **CROSS-V2-01**: Filtro global de estado de transacción (completed / failed / in_progress)
-- [ ] **CROSS-V2-02**: Filtro global de tipo de transacción (multi-select: BONUS / PAYOUT_BANK / PURCHASE / P2P / PAYIN_PSE / PAYIN_TRANSFER / etc.)
-- [ ] **CROSS-V2-03**: Parsing robusto de campos texto del Sheet — `Aging` y `Total Time` (formato `'X years X mons X days X hours X mins X secs'` → minutos), `Value` y `Transaction Cost` (formato `'COP X,XXX.XX'` → number)
-- [ ] **CROSS-V2-04**: JOIN canónico `BD_Plataforma.transaction_id ↔ BD_Payouts.Transaction ID`. El código usa `transaction_id`; JSDoc en cada función que lo use cita al PRD por su nombre semántico (`reference`). Verificación con datos: 773/798 (96.9%) match con `transaction_id`; 0/798 con la columna `reference` real (que contiene hex hashes blockchain, no JOIN keys).
-- [ ] **CROSS-V2-05**: Paleta por sección — Inicio Indigo `#4F46E5` · Bonos Violet `#7C3AED` · Payouts Cyan `#0891B2` · Tarjeta Amber `#D97706` · Clientes Emerald `#059669` · Recargas Teal `#0F766E`. Estados: Verde `#059669` completed · Rojo `#DC2626` failed · Amarillo `#D97706` in_progress.
-- [ ] **CROSS-V2-06**: Modo oscuro (recomendado por PRD)
-- [ ] **CROSS-V2-07**: Modo Presentación con visibility por métrica en Vista Cliente — dual-purpose declarado por PRD: 🔍 Uso Interno (todo visible) vs 🤝 Reuniones con Clientes (`presenter=1` oculta métricas internas). Reglas por métrica documentadas en CLI-V2-02..08. El mecanismo (CSS data-attribute system + cliente-foco share-URL `?empresa=$X&presenter=1`) se reutiliza de v1.0.
+- [x] **CROSS-V2-01**: Filtro global de estado de transacción (completed / failed / in_progress)
+- [x] **CROSS-V2-02**: Filtro global de tipo de transacción (multi-select: BONUS / PAYOUT_BANK / PURCHASE / P2P / PAYIN_PSE / PAYIN_TRANSFER / etc.)
+- [x] **CROSS-V2-03**: Parsing robusto de campos texto del Sheet — `Aging` y `Total Time` (formato `'X years X mons X days X hours X mins X secs'` → minutos), `Value` y `Transaction Cost` (formato `'COP X,XXX.XX'` → number)
+- [x] **CROSS-V2-04**: JOIN canónico `BD_Plataforma.transaction_id ↔ BD_Payouts.Transaction ID`. El código usa `transaction_id`; JSDoc en cada función que lo use cita al PRD por su nombre semántico (`reference`). Verificación con datos: 773/798 (96.9%) match con `transaction_id`; 0/798 con la columna `reference` real (que contiene hex hashes blockchain, no JOIN keys).
+- [x] **CROSS-V2-05**: Paleta por sección — Inicio Indigo `#4F46E5` · Bonos Violet `#7C3AED` · Payouts Cyan `#0891B2` · Tarjeta Amber `#D97706` · Clientes Emerald `#059669` · Recargas Teal `#0F766E`. Estados: Verde `#059669` completed · Rojo `#DC2626` failed · Amarillo `#D97706` in_progress.
+- [x] **CROSS-V2-06**: Modo oscuro (recomendado por PRD)
+- [x] **CROSS-V2-07**: Modo Presentación con visibility por métrica en Vista Cliente — dual-purpose declarado por PRD: 🔍 Uso Interno (todo visible) vs 🤝 Reuniones con Clientes (`presenter=1` oculta métricas internas). Reglas por métrica documentadas en CLI-V2-02..08. El mecanismo (CSS data-attribute system + cliente-foco share-URL `?empresa=$X&presenter=1`) se reutiliza de v1.0.
 
 ### Inicio (rebuilt — operativo lens)
 
@@ -125,13 +125,13 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CROSS-V2-01 | Phase 6 | Pending |
-| CROSS-V2-02 | Phase 6 | Pending |
-| CROSS-V2-03 | Phase 6 | Pending |
-| CROSS-V2-04 | Phase 6 | Pending |
-| CROSS-V2-05 | Phase 6 | Pending |
-| CROSS-V2-06 | Phase 6 | Pending |
-| CROSS-V2-07 | Phase 6 | Pending |
+| CROSS-V2-01 | Phase 6 | Complete |
+| CROSS-V2-02 | Phase 6 | Complete |
+| CROSS-V2-03 | Phase 6 | Complete |
+| CROSS-V2-04 | Phase 6 | Complete |
+| CROSS-V2-05 | Phase 6 | Complete |
+| CROSS-V2-06 | Phase 6 | Complete |
+| CROSS-V2-07 | Phase 6 | Complete |
 | BON-V2-01   | Phase 7 | Pending |
 | BON-V2-02   | Phase 7 | Pending |
 | BON-V2-03   | Phase 7 | Pending |

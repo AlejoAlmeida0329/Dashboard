@@ -34,7 +34,7 @@ Detalle archivado en [.planning/milestones/v1.0-ROADMAP.md](./milestones/v1.0-RO
 
 **Milestone Goal:** Refactor a vista de analytics operativa según PRD v2. 6 secciones (Inicio · Bonos · Payouts · Uso Tarjeta · Vista Cliente · Recargas) con métricas P0/P1/P2 priorizadas, parsing robusto de campos texto, JOIN canónico via `transaction_id`, dual-purpose declarado en Vista Cliente.
 
-- [ ] **Phase 6: Foundation v2** — cross-cutting: parsing utils, JOIN helper, filtros globales extendidos, paleta por sección, dark mode, sistema de visibility por métrica
+- [x] **Phase 6: Foundation v2** — cross-cutting: parsing utils, JOIN helper, filtros globales extendidos, paleta por sección, dark mode, sistema de visibility por métrica
 - [ ] **Phase 7: Bonos + Payouts (rebuilt)** — split source/destination en Bonos; eficiencia/banco/fallos/terceros en Payouts
 - [ ] **Phase 8: Uso Tarjeta + Recargas** — pestaña nueva PURCHASE; Recargas extendida con PAYIN_TRANSFER
 - [ ] **Phase 9: Vista Cliente (rebuilt)** — selector tikintag, 5 KPIs cabecera, JOIN enriquecido, P2P, tiempo vs benchmark, timeline cronológico (dual-purpose visibility)
@@ -142,7 +142,7 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10. Phases 7 y 8 son in
 | 3. Payouts | v1.0 | — | ✅ Complete | 2026-05-03 |
 | 4. Inicio + Recargas | v1.0 | — | ✅ Complete | 2026-05-05 |
 | 5. Clientes + Domain | v1.0 | — | ✅ Complete | 2026-05-06 |
-| 6. Foundation v2 | v2.0 | 0/TBD | Not started | — |
+| 6. Foundation v2 | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 7. Bonos + Payouts | v2.0 | 0/TBD | Not started | — |
 | 8. Uso Tarjeta + Recargas | v2.0 | 0/TBD | Not started | — |
 | 9. Vista Cliente | v2.0 | 0/TBD | Not started | — |
