@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-05-07 al iniciar milestone v2.0 Analytic
 ## Current Position
 
 Phase: 6 of 10 (Foundation v2) — first phase of v2.0 milestone
-Plan: 1 of 4 (Plan 06-01 complete)
+Plan: 06-01 + 06-03 complete (Wave 1 parallel execution)
 Status: In progress
-Last activity: 2026-05-07 — Completed 06-01-PLAN.md (parsing API extraction)
+Last activity: 2026-05-07 — Completed 06-03-PLAN.md (filtros globales Estado + Tipo + URL CSV)
 
-Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 0/5 phases (0%) · Phase 6: 1/4 plans █░░░ (25%)
+Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 0/5 phases (0%) · Phase 6: 2/4 plans ██░░ (50%)
 
 ## Performance Metrics
 
@@ -52,6 +52,9 @@ Decisions están loggeadas en PROJECT.md Key Decisions table. Recent ones que af
 - **6 secciones (no 5)** — Recargas vuelve en v2 con scope expandido (PSE + Transfer); Uso Tarjeta es una sección distinta para PURCHASE.
 - **`parseCOPAmount` returns `number | null`** (Plan 06-01) — null = explicit "no value" signal; v2.0 callers branch on `=== null` to distinguish missing vs zero. Zod schemas wrap and translate null → `addIssue + z.NEVER`.
 - **`parsers.ts` public API in MINUTES, `schemas.ts` internal path in SECONDS** (Plan 06-01) — `parseAging`/`parseTotalTime` return minutes (PRD v2 expectation); `parsePgIntervalSeconds` kept exported and used by `schemas.ts` for `Payout.latencySeconds` backward-compat (Phase 3 percentiles).
+- **CSV multi-select URL serialization** (Plan 06-03) — `?status=completed,failed&tipo=BONUS,P2P` chosen over repeated keys. Empty array → param omitted (parity with absent key). Stable URL ordering: from → to → empresa → status → tipo → presenter.
+- **Filter option lists hardcoded in components** (Plan 06-03) — `StatusFilter` + `TypeFilter` declare their own `value/label` arrays; NOT auto-derived from `TransactionType` union. UI labels (e.g. "Compra (tarjeta)") are UI concerns; defensive fallbacks (UKNOWN, OTRO) excluded from filter options. Schema additions don't auto-pollute the dropdown.
+- **Phase 6 ships filter UI + URL contract only** (Plan 06-03) — domain functions (`filterBonos`, `filterPayouts`, etc.) NOT touched. Each Phase 7+ section decides which filters to honor in its data layer.
 
 ### Pending Todos
 
@@ -69,7 +72,7 @@ Ninguno aún para v2.0. Carry-forwards de v1.0 deferreds NO se trasladan (decisi
 
 ## Session Continuity
 
-Last session: 2026-05-07 — Plan 06-01 ejecutado (parsing API extraction).
+Last session: 2026-05-07 — Plan 06-03 ejecutado (filtros globales Estado + Tipo, URL CSV serialization).
 
 **v2.0 actions tomadas hoy:**
 - ✅ `/gsd:new-milestone` — milestone iniciado
@@ -77,9 +80,11 @@ Last session: 2026-05-07 — Plan 06-01 ejecutado (parsing API extraction).
 - ✅ `/gsd:create-roadmap` — 5 fases (6-10) con success criteria + research flags + traceability completo
 - ✅ `/gsd:plan-phase 6` — Phase 6 plans creados (06-01 a 06-04)
 - ✅ `/gsd:execute-plan 06-01` — `src/lib/domain/parsers.ts` creado; `schemas.ts` refactorizado a delegar; tsc + lint + build green
+- ✅ `/gsd:execute-plan 06-03` (Wave 1) — `DashboardFilters.status`/`tipo` + `StatusFilter`/`TypeFilter` + header wired; tsc + lint + build green; zero deps añadidas
 
 **Next:**
-1. **`/gsd:execute-plan 06-02`** — siguiente plan de Phase 6 (probablemente JOIN canónico verification end-to-end o dark mode foundation)
+1. Wave 1 sibling plans (06-02, 06-04) — completion pendiente de los otros agentes paralelos en este wave
+2. Tras Wave 1 completar, validate `/gsd:execute-phase` checkpoint o avanzar a Phase 7 planning
 
-Stopped at: Completed 06-01-PLAN.md
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
