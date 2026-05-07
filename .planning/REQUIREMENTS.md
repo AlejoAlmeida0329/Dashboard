@@ -29,7 +29,7 @@ Capacidades transversales que aplican a todas las pestañas del dashboard.
 - [ ] **INFRA-01**: Despliegue en Vercel (etapa de prueba)
 - [ ] **INFRA-02**: Conexión a las dos hojas de Google Sheets actuales vía API (transacciones de plataforma + tiempos de payouts)
 - [ ] **INFRA-03**: Validación de schema en cada lectura de Sheets — si una columna esperada falta o cambia de tipo, el dashboard falla con error claro (no muestra números incorrectos en silencio)
-- [ ] **INFRA-04**: Migración a dominio propio (ej. `dashboard.tikin.co`) una vez estable
+- [ ] **INFRA-04**: Migración a dominio propio (ej. `dashboard.tikin.co`) una vez estable *(Phase 5 — DEFERRED, decisión de dominio pendiente del usuario)*
 
 ### Inicio
 
@@ -75,14 +75,14 @@ Pestaña de retiros (a tarjetas y a cuentas bancarias) más data de tiempos de p
 
 Pestaña de empresas corporativas: vista de lista + vista de perfil por empresa.
 
-- [ ] **CLI-01**: Usuario ve tabla de empresas (nombre, fecha última actividad, total $ histórico, $ del período seleccionado)
-- [ ] **CLI-02**: Usuario puede ordenar columnas de la tabla (por $, por recencia, por nombre)
-- [ ] **CLI-03**: Usuario puede buscar empresa por nombre
-- [ ] **CLI-04**: Usuario ve KPIs en cabecera de la pestaña — Total empresas + Empresas activas
-- [ ] **CLI-05**: Usuario ve vista de perfil de una empresa con header (nombre, status, fecha última actividad)
-- [ ] **CLI-06**: Usuario ve gráfica de actividad mensual de la empresa (últimos 12 meses, $ vendido por mes)
-- [ ] **CLI-07**: Usuario ve mini-resumen de 3 cards (Bonos / Recargas / Payouts) en el perfil de empresa seleccionada
-- [ ] **CLI-08**: Usuario tiene botón "Generar vista para cliente" que aplica filtro de empresa + activa Modo Presentación + lleva a pestaña Inicio
+- [x] **CLI-01**: Usuario ve tabla de empresas (nombre, fecha última actividad, total $ histórico, $ del período seleccionado)
+- [x] **CLI-02**: Usuario puede ordenar columnas de la tabla (por $, por recencia, por nombre)
+- [x] **CLI-03**: Usuario puede buscar empresa por nombre
+- [x] **CLI-04**: Usuario ve KPIs en cabecera de la pestaña — Total empresas + Empresas activas
+- [x] **CLI-05**: Usuario ve vista de perfil de una empresa con header (nombre, status, fecha última actividad)
+- [x] **CLI-06**: Usuario ve gráfica de actividad mensual de la empresa (últimos 12 meses, $ vendido por mes)
+- [x] **CLI-07**: Usuario ve mini-resumen de 3 cards (Bonos / Recargas / Payouts) en el perfil de empresa seleccionada
+- [x] **CLI-08**: Usuario tiene botón "Generar vista para cliente" que aplica filtro de empresa + activa Modo Presentación + lleva a pestaña Inicio
 
 ## v2 Requirements
 
@@ -171,7 +171,7 @@ Qué fase cubre cada requirement.
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Complete |
-| INFRA-04 | Phase 5 | Pending |
+| INFRA-04 | Phase 5 | Deferred (decisión de dominio pendiente del usuario; cliente-flow LIVE en `.vercel.app`) |
 | INI-01 | Phase 4 | Complete |
 | INI-02 | Phase 4 | Complete |
 | INI-03 | Phase 4 | Complete |
@@ -193,14 +193,14 @@ Qué fase cubre cada requirement.
 | PAY-04 | Phase 3 | Complete (reinterpretado: TopBancos en vez de tarjeta-vs-banco) |
 | PAY-05 | Phase 3 | Complete |
 | PAY-V2-01 | Phase 3 | Complete (promovido de v2 a v1 durante Phase 3) |
-| CLI-01 | Phase 5 | Pending |
-| CLI-02 | Phase 5 | Pending |
-| CLI-03 | Phase 5 | Pending |
-| CLI-04 | Phase 5 | Pending |
-| CLI-05 | Phase 5 | Pending |
-| CLI-06 | Phase 5 | Pending |
-| CLI-07 | Phase 5 | Pending |
-| CLI-08 | Phase 5 | Pending |
+| CLI-01 | Phase 5 | Complete |
+| CLI-02 | Phase 5 | Complete |
+| CLI-03 | Phase 5 | Complete |
+| CLI-04 | Phase 5 | Complete |
+| CLI-05 | Phase 5 | Complete |
+| CLI-06 | Phase 5 | Complete |
+| CLI-07 | Phase 5 | Complete |
+| CLI-08 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 41 total

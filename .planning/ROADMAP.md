@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Bonos** — Pestaña de venta de bonos (revenue principal)
 - [x] **Phase 3: Payouts** — Pestaña de retiros con P50/P95 y split tarjeta vs banco *(completed 2026-05-04; production: https://project-dashboard-allec5r4i.vercel.app)*
 - [x] **Phase 4: Inicio + Recargas** — Overview ejecutivo (5 KPIs + 2 gráficas) + tab de recargas *(completed 2026-05-06; production: https://project-dashboard-4b4fxxmdr.vercel.app)*
-- [ ] **Phase 5: Clientes + Domain** — Lista y perfil de empresas, botón "Generar vista para cliente", dominio propio
+- [x] **Phase 5: Clientes + Domain** — Lista y perfil de empresas, botón "Generar vista para cliente" *(completed 2026-05-06; production: https://project-dashboard-z0fpsm5hl.vercel.app — 4/5 plans; INFRA-04 dominio propio DEFERRED por decisión del usuario)*
 
 ## Phase Details
 
@@ -111,4 +111,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Bonos | 4/4 | ✅ Complete | 2026-04-29 |
 | 3. Payouts | 4/4 | ✅ Complete | 2026-05-04 |
 | 4. Inicio + Recargas | 8/8 | ✅ Complete | 2026-05-06 |
-| 5. Clientes + Domain | 0/TBD | Not started | - |
+| 5. Clientes + Domain | 4/5 | ✅ Complete (05-05 INFRA-04 deferred) | 2026-05-06 |
