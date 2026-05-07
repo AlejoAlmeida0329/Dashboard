@@ -315,3 +315,220 @@ export function aggregateBonosByEmpresa(bonos: Transaction[]): BonoByEmpresa[] {
 export function top10Empresas(rows: BonoByEmpresa[]): BonoByEmpresa[] {
   return rows.slice(0, 10);
 }
+
+// === v2 Output types (Plan 07-01 — split source/destination) ================
+
+/** Header KPIs for the v2 Bonos tab — split in vs out. */
+export interface BonoSummaryV2 {
+  /** Bonos recibidos in the filtered range (BONUS direction=in). */
+  countIn: number;
+  /** Bonos enviados in the filtered range (BONUS direction=out). */
+  countOut: number;
+  /** Sum of `monto` for bonos recibidos (COP). */
+  montoIn: number;
+  /** Sum of `monto` for bonos enviados (COP). */
+  montoOut: number;
+  /**
+   * Average ticket size across BOTH directions combined: `(montoIn + montoOut)
+   * / (countIn + countOut)`. `0` (not NaN) when there are no bonos.
+   */
+  ticketPromedio: number;
+}
+
+/** One point on the v2 stacked timeline (in vs out per Bogotá day). */
+export interface BonoByDateV2 {
+  /** ISO date `YYYY-MM-DD` interpreted in Bogotá. */
+  date: string;
+  countIn: number;
+  countOut: number;
+  montoIn: number;
+  montoOut: number;
+}
+
+/** One row of the top-emisores or top-receptores ranking. */
+export interface BonoTikintagRow {
+  /** Tikintag (sender for emisores, receiver for receptores). */
+  tikintag: string;
+  /** Number of bonos this tikintag emitted/received in the filtered set. */
+  count: number;
+  /** Sum of `monto` across those bonos (COP). */
+  monto: number;
+}
+
+// === v2 Filter (allows BOTH directions; honors filters.status from URL) =====
+
+/**
+ * v2 Bonos filter — broader than v1 `filterBonos`:
+ *   1. `tipo` ∈ BONO_TRANSACTION_TYPES (currently just `'BONUS'`) — same as v1.
+ *   2. `direction` is NOT pre-filtered. Both `in` and `out` flow through;
+ *      v2 page composition splits them downstream (top emisores ranks the
+ *      `out` side, top receptores ranks the `in` side, summary counts both).
+ *   3. Status:
+ *        - When `filters.status` is undefined or empty: default to `completed`
+ *          (matches v1 default — rejected/in_progress bonos never carried money).
+ *        - When `filters.status` is set (CROSS-V2-01 URL filter): honor the
+ *          user's selection verbatim. The Set lookup tolerates the
+ *          `OTRO_STATUS` fallback gracefully.
+ *   4. Bogotá-anchored from/to (inclusive ends) — same convention as v1.
+ *   5. Optional `empresa` filter — same `t.empresa_id === filters.empresa`
+ *      semantics as v1.
+ *   6. `filters.tipo` is INTENTIONALLY ignored: the Bonos tab is BONUS-by-
+ *      definition; the global `tipo` multi-select drives Inicio/Vista
+ *      Cliente cross-cuts, not this tab. (CROSS-V2-02 honoring is
+ *      per-section per Plan 06-03 SUMMARY.)
+ *
+ * Pure: returns a new array; does not mutate `transactions`.
+ */
+export function filterBonosV2(
+  transactions: Transaction[],
+  filters: DashboardFilters,
+): Transaction[] {
+  const bonoTypeSet = new Set<string>(BONO_TRANSACTION_TYPES);
+  const fromTs = startOfDayBogotaTimestamp(filters.from);
+  const toTs = endOfDayBogotaTimestamp(filters.to);
+  const empresa = filters.empresa;
+  const statusSet =
+    filters.status && filters.status.length > 0
+      ? new Set<string>(filters.status)
+      : new Set<string>(["completed"]);
+
+  return transactions.filter((t) => {
+    if (!bonoTypeSet.has(t.tipo)) return false;
+    if (!statusSet.has(t.status)) return false;
+
+    const ts = t.fecha.getTime();
+    if (!Number.isFinite(ts)) return false;
+    if (ts < fromTs) return false;
+    if (ts > toTs) return false;
+
+    if (empresa && t.empresa_id !== empresa) return false;
+
+    return true;
+  });
+}
+
+/**
+ * Compute v2 header KPIs from an already-filtered list of bonos.
+ *
+ * Pure. Empty input → `{ countIn: 0, countOut: 0, montoIn: 0, montoOut: 0,
+ * ticketPromedio: 0 }` (no NaN / Infinity).
+ *
+ * "in" / "out" partitioning is by `direction`. Rows with
+ * `direction === 'OTRO_DIRECTION'` (the defensive fallback in
+ * `types.ts`) are NOT counted on either side — they're surfaced as a
+ * count discrepancy that future telemetry can flag, but they don't
+ * silently inflate either bucket.
+ */
+export function summarizeBonosV2(bonos: Transaction[]): BonoSummaryV2 {
+  let countIn = 0;
+  let countOut = 0;
+  let montoIn = 0;
+  let montoOut = 0;
+  for (const b of bonos) {
+    if (b.direction === "in") {
+      countIn += 1;
+      montoIn += b.monto;
+    } else if (b.direction === "out") {
+      countOut += 1;
+      montoOut += b.monto;
+    }
+  }
+  const total = countIn + countOut;
+  const ticketPromedio = total > 0 ? (montoIn + montoOut) / total : 0;
+  return { countIn, countOut, montoIn, montoOut, ticketPromedio };
+}
+
+/**
+ * Group bonos by Bogotá calendar date producing one point per day with
+ * data, partitioning each day's count and monto by direction (in vs out).
+ *
+ * Output sorted ASCENDING by `date` (no zero-fill — same as v1
+ * `aggregateBonosByDate`). The shape matches a stacked-bar Recharts
+ * dataset directly: each row carries `countIn` + `countOut` (or `montoIn`
+ * + `montoOut` if Plan 07-02 chooses to stack by amount).
+ */
+export function aggregateBonosByDateV2(bonos: Transaction[]): BonoByDateV2[] {
+  const byDay = new Map<string, BonoByDateV2>();
+  for (const b of bonos) {
+    const date = toBogotaISODate(b.fecha);
+    let cur = byDay.get(date);
+    if (!cur) {
+      cur = { date, countIn: 0, countOut: 0, montoIn: 0, montoOut: 0 };
+      byDay.set(date, cur);
+    }
+    if (b.direction === "in") {
+      cur.countIn += 1;
+      cur.montoIn += b.monto;
+    } else if (b.direction === "out") {
+      cur.countOut += 1;
+      cur.montoOut += b.monto;
+    }
+  }
+  return Array.from(byDay.values()).sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
+}
+
+/**
+ * Internal: group bonos by the supplied tikintag selector, aggregate
+ * count + monto, and return the top N rows by `count` DESC (ties broken
+ * by `monto` DESC). Rows whose selector returns `undefined` or empty
+ * string are EXCLUDED from the ranking (a peer-less bono cannot be
+ * attributed to a sender or receiver).
+ *
+ * Pure. O(n + k log k) where k = distinct tikintags.
+ */
+function aggregateByTikintag(
+  bonos: Transaction[],
+  selector: (t: Transaction) => string | undefined,
+  n: number,
+): BonoTikintagRow[] {
+  const acc = new Map<string, BonoTikintagRow>();
+  for (const b of bonos) {
+    const tikintag = selector(b);
+    if (!tikintag || tikintag.length === 0) continue;
+    const cur = acc.get(tikintag);
+    if (cur) {
+      cur.count += 1;
+      cur.monto += b.monto;
+    } else {
+      acc.set(tikintag, { tikintag, count: 1, monto: b.monto });
+    }
+  }
+  const rows = Array.from(acc.values());
+  rows.sort((a, b) =>
+    b.count !== a.count ? b.count - a.count : b.monto - a.monto,
+  );
+  return rows.slice(0, n);
+}
+
+/**
+ * Top emisores de bonos — rank tikintags by how many bonos they SENT.
+ *
+ * Reads `sourceTransferTikintag` (Plan 07-01 schema add). A bono with no
+ * `sourceTransferTikintag` is excluded from the ranking entirely (cannot
+ * be attributed). Default `n = 10` matches the original `top10Empresas`
+ * convention; pass a smaller `n` when the v2 page needs a 5-row cockpit
+ * variant.
+ *
+ * Pure. Returns a NEW array sorted DESC by count.
+ */
+export function aggregateTopEmisores(
+  bonos: Transaction[],
+  n = 10,
+): BonoTikintagRow[] {
+  return aggregateByTikintag(bonos, (t) => t.sourceTransferTikintag, n);
+}
+
+/**
+ * Top receptores de bonos — rank tikintags by how many bonos they RECEIVED.
+ *
+ * Reads `destinationTransferTikintag` (Plan 07-01 schema add). Same
+ * exclusion + sort + default-N rules as `aggregateTopEmisores`.
+ */
+export function aggregateTopReceptores(
+  bonos: Transaction[],
+  n = 10,
+): BonoTikintagRow[] {
+  return aggregateByTikintag(bonos, (t) => t.destinationTransferTikintag, n);
+}
