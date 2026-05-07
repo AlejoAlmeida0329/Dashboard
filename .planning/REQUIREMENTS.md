@@ -121,17 +121,74 @@ Exclusiones explícitas para prevenir scope creep. Razonamiento se mantiene a tr
 
 ## Traceability
 
-Mapped during `/gsd:create-roadmap`. Initially empty.
+Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (TBD)       | (TBD) | Pending |
+| CROSS-V2-01 | Phase 6 | Pending |
+| CROSS-V2-02 | Phase 6 | Pending |
+| CROSS-V2-03 | Phase 6 | Pending |
+| CROSS-V2-04 | Phase 6 | Pending |
+| CROSS-V2-05 | Phase 6 | Pending |
+| CROSS-V2-06 | Phase 6 | Pending |
+| CROSS-V2-07 | Phase 6 | Pending |
+| BON-V2-01   | Phase 7 | Pending |
+| BON-V2-02   | Phase 7 | Pending |
+| BON-V2-03   | Phase 7 | Pending |
+| BON-V2-04   | Phase 7 | Pending |
+| BON-V2-05   | Phase 7 | Pending |
+| BON-V2-06   | Phase 7 | Pending |
+| BON-V2-07   | Phase 7 | Pending |
+| PAY-V2-01   | Phase 7 | Pending |
+| PAY-V2-02   | Phase 7 | Pending |
+| PAY-V2-03   | Phase 7 | Pending |
+| PAY-V2-04   | Phase 7 | Pending |
+| PAY-V2-05   | Phase 7 | Pending |
+| PAY-V2-06   | Phase 7 | Pending |
+| PAY-V2-07   | Phase 7 | Pending |
+| PAY-V2-08   | Phase 7 | Pending |
+| CARD-V2-01  | Phase 8 | Pending |
+| CARD-V2-02  | Phase 8 | Pending |
+| CARD-V2-03  | Phase 8 | Pending |
+| CARD-V2-04  | Phase 8 | Pending |
+| CARD-V2-05  | Phase 8 | Pending |
+| CARD-V2-06  | Phase 8 | Pending |
+| REC-V2-01   | Phase 8 | Pending |
+| REC-V2-02   | Phase 8 | Pending |
+| REC-V2-03   | Phase 8 | Pending |
+| REC-V2-04   | Phase 8 | Pending |
+| REC-V2-05   | Phase 8 | Pending |
+| REC-V2-06   | Phase 8 | Pending |
+| REC-V2-07   | Phase 8 | Pending |
+| REC-V2-08   | Phase 8 | Pending |
+| CLI-V2-01   | Phase 9 | Pending |
+| CLI-V2-02   | Phase 9 | Pending |
+| CLI-V2-03   | Phase 9 | Pending |
+| CLI-V2-04   | Phase 9 | Pending |
+| CLI-V2-05   | Phase 9 | Pending |
+| CLI-V2-06   | Phase 9 | Pending |
+| CLI-V2-07   | Phase 9 | Pending |
+| CLI-V2-08   | Phase 9 | Pending |
+| INI-V2-01   | Phase 10 | Pending |
+| INI-V2-02   | Phase 10 | Pending |
+| INI-V2-03   | Phase 10 | Pending |
+| INI-V2-04   | Phase 10 | Pending |
+| INI-V2-05   | Phase 10 | Pending |
+| INI-V2-06   | Phase 10 | Pending |
+| INFRA-04    | Phase 10 | Pending |
 
 **Coverage:**
 - v1 requirements: 51 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 51 ⚠️ (expected — populated by create-roadmap)
+- Mapped to phases: 51 ✓
+- Unmapped: 0 ✓
+
+**Phase distribution:**
+- Phase 6 (Foundation v2): 7 reqs — CROSS-V2-01..07
+- Phase 7 (Bonos + Payouts): 15 reqs — BON-V2-01..07 + PAY-V2-01..08
+- Phase 8 (Uso Tarjeta + Recargas): 14 reqs — CARD-V2-01..06 + REC-V2-01..08
+- Phase 9 (Vista Cliente): 8 reqs — CLI-V2-01..08
+- Phase 10 (Inicio + Infrastructure): 7 reqs — INI-V2-01..06 + INFRA-04
 
 ---
 *Requirements defined: 2026-05-07*
-*Last updated: 2026-05-07 after initial definition*
+*Last updated: 2026-05-07 after roadmap creation (traceability populated)*
