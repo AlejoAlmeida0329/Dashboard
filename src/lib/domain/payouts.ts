@@ -607,3 +607,221 @@ export function aggregateSuccessRate(rows: Payout[]): SuccessRate {
     totalAttempted,
   };
 }
+
+// === v2 Output types (Plan 07-03 — time-first) ==============================
+
+/**
+ * State breakdown across the period-filtered (state-UNFILTERED) universe.
+ * Counts plus the success rate fraction in one shot — Plan 07-04 page
+ * composition spreads this across 3 KPIs por estado + the tasa-de-éxito
+ * semáforo without re-iterating the input.
+ */
+export interface PayoutStateBreakdown {
+  completed: number;
+  failed: number;
+  inProgress: number;
+  /** completed + failed + inProgress + any OTRO_STATE row in the input. */
+  total: number;
+  /** completed / total; `0` when total is `0` (zero-safe). */
+  successRate: number;
+}
+
+/**
+ * Aging-alert row: an in_progress payout whose age (latencySeconds, which
+ * here equals `Aging` because `Total Time` is empty for in_progress per
+ * Payout.latencySeconds JSDoc) exceeds the alert threshold.
+ *
+ * Rendered as the urgent-table on the v2 Payouts page (PAY-V2-04).
+ */
+export interface AgingAlertRow {
+  transactionId: string;
+  internalId: string;
+  fecha: Date;
+  holder: string;
+  monto: number;
+  medium: string;
+  /**
+   * Aging in MINUTES (latencySeconds / 60). For in_progress rows this is
+   * literally the row's age; for completed/failed rows the field is not
+   * meaningful and they are excluded by `aggregateAgingAlertPending` upstream.
+   */
+  agingMinutes: number;
+}
+
+/**
+ * One row of the failure-reason breakdown.
+ *
+ * `reason` is the raw `Payout.failureReason` string (verbatim — no
+ * normalization beyond the schema's already-applied trim). When the field
+ * is missing on a failed row, the row is grouped under the literal
+ * `"Sin razón"` bucket so the failures don't disappear from the breakdown.
+ */
+export interface FailureReasonRow {
+  reason: string;
+  count: number;
+  /** Sum of `monto` (COP) across failed payouts with this reason. */
+  monto: number;
+}
+
+/**
+ * One row of the third-party-payouts table — payouts whose `holder`
+ * (cardholder full name) does NOT match the originating transaction's
+ * `tikintag`. Per PAY-V2-08 these are bank withdrawals where the
+ * benefactor is a different person than the empresa solicitante.
+ */
+export interface ThirdPartyPayoutRow {
+  transactionId: string;
+  fecha: Date;
+  holder: string;
+  /** The originating transaction's tikintag — e.g. `"$mario"`. */
+  tikintag: string;
+  monto: number;
+  medium: string;
+  state: PayoutState;
+}
+
+// === v2 Filters (allow ALL states by default; honor filters.status) =========
+
+/**
+ * v2 Payouts filter — broader than v1 `filterPayouts`:
+ *   1. State: NOT pre-filtered. By default (no `filters.status` URL key)
+ *      ALL three states (completed / failed / in_progress) flow through so
+ *      the v2 page can render 3 KPIs por estado AND the tasa-de-éxito
+ *      semáforo from the SAME row set without re-querying.
+ *   2. When `filters.status` is set (CROSS-V2-01 URL filter): honor the
+ *      user's selection — narrow the universe to those states. Same Set-
+ *      lookup tolerance as `filterBonosV2`.
+ *   3. Bogotá-anchored from/to (inclusive ends) — same convention as v1.
+ *   4. Optional `empresa` filter — `p.empresa_id === filters.empresa`.
+ *      Empty/undefined → no empresa restriction. Page composition is
+ *      responsible for enriching `Payout.empresa_id` via `joinPayouts()`
+ *      BEFORE calling this when an empresa filter is active (same contract
+ *      as v1 — see v1 JSDoc).
+ *   5. `filters.tipo` is INTENTIONALLY ignored: BD_Payouts has no `tipo`
+ *      field. The Payouts tab is PAYOUT_BANK by-table-of-origin, not by
+ *      transaction_type.
+ *
+ * Pure: returns a new array; does not mutate `payouts`.
+ */
+export function filterPayoutsV2(
+  payouts: Payout[],
+  filters: DashboardFilters,
+): Payout[] {
+  const fromTs = startOfDayBogotaTimestamp(filters.from);
+  const toTs = endOfDayBogotaTimestamp(filters.to);
+  const empresa = filters.empresa;
+  const statusSet =
+    filters.status && filters.status.length > 0
+      ? new Set<string>(filters.status)
+      : undefined;
+
+  return payouts.filter((p) => {
+    if (statusSet && !statusSet.has(p.state)) return false;
+
+    const ts = p.fecha.getTime();
+    if (!Number.isFinite(ts)) return false;
+    if (ts < fromTs) return false;
+    if (ts > toTs) return false;
+
+    if (empresa && p.empresa_id !== empresa) return false;
+
+    return true;
+  });
+}
+
+/**
+ * Tally `state` across an already-filtered universe of payouts (typically
+ * the output of `filterPayoutsV2` with no `status` URL filter set, so all
+ * three states are present in the input).
+ *
+ * Returns counts for the three known states + the total (which may exceed
+ * `completed + failed + inProgress` if any `OTRO_STATE` rows snuck in —
+ * we want `successRate` to reflect the full denominator) and the
+ * `successRate` fraction.
+ *
+ * Pure. Empty input → all zeros, `successRate: 0`.
+ */
+export function summarizePayoutsByState(
+  payouts: Payout[],
+): PayoutStateBreakdown {
+  let completed = 0;
+  let failed = 0;
+  let inProgress = 0;
+  for (const p of payouts) {
+    if (p.state === "completed") completed += 1;
+    else if (p.state === "failed") failed += 1;
+    else if (p.state === "in_progress") inProgress += 1;
+  }
+  const total = payouts.length;
+  return {
+    completed,
+    failed,
+    inProgress,
+    total,
+    successRate: total > 0 ? completed / total : 0,
+  };
+}
+
+/**
+ * Mean processing time in MINUTES across COMPLETED payouts only (PAY-V2-03).
+ *
+ * Reads `Payout.latencySeconds` which carries `Total Time` for completed
+ * rows (per the Payout interface JSDoc + Plan 06-01 SUMMARY). Filters
+ * the input to `state === 'completed'` defensively so the caller doesn't
+ * accidentally include `Aging`-fallback values from in_progress / failed
+ * rows in the mean.
+ *
+ * Returns the unrounded mean (Plan 07-04 components decide on display
+ * rounding via `formatMinutes` in `format.ts`). Empty completed set → `0`
+ * (zero-safe).
+ *
+ * Pure. O(n).
+ */
+export function aggregateAverageProcessingMinutes(payouts: Payout[]): number {
+  let count = 0;
+  let totalSeconds = 0;
+  for (const p of payouts) {
+    if (p.state !== "completed") continue;
+    if (!Number.isFinite(p.latencySeconds)) continue;
+    count += 1;
+    totalSeconds += p.latencySeconds;
+  }
+  if (count === 0) return 0;
+  return totalSeconds / count / 60;
+}
+
+/**
+ * Filter the period-universe to in_progress payouts whose aging exceeds
+ * the threshold (default 120 minutes = 2 hours per PAY-V2-04). For
+ * in_progress rows `latencySeconds` equals `Aging` (Total Time is empty
+ * for non-completed rows — see Payout.latencySeconds JSDoc), so dividing
+ * by 60 gives the row age in minutes.
+ *
+ * Returns rows sorted DESC by `agingMinutes` (oldest first, the urgent
+ * one at the top of the alert table).
+ *
+ * Pure. O(n + k log k) where k = matching rows.
+ */
+export function aggregateAgingAlertPending(
+  payouts: Payout[],
+  thresholdMinutes = 120,
+): AgingAlertRow[] {
+  const thresholdSeconds = thresholdMinutes * 60;
+  const out: AgingAlertRow[] = [];
+  for (const p of payouts) {
+    if (p.state !== "in_progress") continue;
+    if (!Number.isFinite(p.latencySeconds)) continue;
+    if (p.latencySeconds <= thresholdSeconds) continue;
+    out.push({
+      transactionId: p.transactionId,
+      internalId: p.internalId,
+      fecha: p.fecha,
+      holder: p.holder,
+      monto: p.monto,
+      medium: p.medium,
+      agingMinutes: p.latencySeconds / 60,
+    });
+  }
+  out.sort((a, b) => b.agingMinutes - a.agingMinutes);
+  return out;
+}
