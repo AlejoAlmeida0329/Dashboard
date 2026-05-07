@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-05-07 al iniciar milestone v2.0 Analytic
 
 ## Current Position
 
-Phase: 6 of 10 (Foundation v2) — first phase of v2.0 milestone
-Plan: 06-01 + 06-02 + 06-03 complete (Wave 1 parallel execution)
-Status: In progress
-Last activity: 2026-05-07 — Completed 06-02-PLAN.md (canonical JOIN helper)
+Phase: 6 of 10 (Foundation v2) — first phase of v2.0 milestone COMPLETE
+Plan: 06-01 + 06-02 + 06-03 + 06-04 complete (Phase 6 done)
+Status: Phase complete — ready for `/gsd:execute-phase` close-out / Phase 7 planning
+Last activity: 2026-05-07 — Completed 06-04-PLAN.md (dark mode + paleta v2.0 + visibility por métrica)
 
-Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 0/5 phases (0%) · Phase 6: 3/4 plans ███░ (75%)
+Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 1/5 phases (20%) · Phase 6: 4/4 plans ████ (100%)
 
 ## Performance Metrics
 
@@ -56,6 +56,10 @@ Decisions están loggeadas en PROJECT.md Key Decisions table. Recent ones que af
 - **Filter option lists hardcoded in components** (Plan 06-03) — `StatusFilter` + `TypeFilter` declare their own `value/label` arrays; NOT auto-derived from `TransactionType` union. UI labels (e.g. "Compra (tarjeta)") are UI concerns; defensive fallbacks (UKNOWN, OTRO) excluded from filter options. Schema additions don't auto-pollute the dropdown.
 - **Phase 6 ships filter UI + URL contract only** (Plan 06-03) — domain functions (`filterBonos`, `filterPayouts`, etc.) NOT touched. Each Phase 7+ section decides which filters to honor in its data layer.
 - **Diagnostic-route lifecycle pattern reaffirmed** (Plan 06-02) — temp `/api/diagnose-*` routes for live verification get created, exercised via temporary proxy.ts PUBLIC_PATHS extension, then deleted (route) + reverted (proxy) BEFORE the task commit. Source never lands in git history. Mirrors Plans 02-01 and 03-01.
+- **next-themes wired with `attribute="class"` + `defaultTheme="system"`** (Plan 06-04) — aligns with the existing `@custom-variant dark (&:is(.dark *))` selector in `globals.css` (zero v1.0 dark CSS rewritten). First visit respects OS preference; user override persists in localStorage. `<html suppressHydrationWarning>` required because next-themes flips `.dark` before React hydrates. ThemeToggle stays VISIBLE in presenter mode (operator control during meetings).
+- **v2.0 paleta = OKLCH, lifted +0.10 lightness for dark** (Plan 06-04) — 6 section vars (`--section-{inicio|bonos|payouts|tarjeta|clientes|recargas}`) + 3 status vars (`--status-{success|fail|pending}`) declared in `:root`, mirrored brighter in `.dark`. Exposed to Tailwind via `@theme inline { --color-section-*: var(--section-*) }` so `text-section-bonos`, `bg-status-success`, etc. resolve as utilities. Status palette intentionally aliases section hues (verde ≡ emerald, amarillo ≡ amber) — single semantic source per hue family.
+- **Conservative-default per-metric visibility** (Plan 06-04, CROSS-V2-07) — `[data-presenter="on"] [data-presenter-metric-hide] { display: none !important }`. Default policy: ALL metrics visible in presenter; opt-out by tagging individual elements. Distinct from chrome `data-presenter-hide` and cliente-foco `data-presenter-empresa-hide`. Phase 9 (Vista Cliente CLI-V2-08) tags the cronological timeline.
+- **React 19 `react-hooks/set-state-in-effect` requires per-call eslint-disable for next-themes mount gate** (Plan 06-04 deviation) — canonical `useEffect → setMounted(true)` pattern collides with the React 19 lint rule. Resolution: keep the documented next-themes pattern + focused single-line `eslint-disable-next-line` + JSDoc explaining the why. Future plans adopting "subscribe → setState" patterns may need similar exceptions; if more than 2-3 cases appear, consider project-level config exception.
 
 ### Pending Todos
 
@@ -73,7 +77,7 @@ Ninguno aún para v2.0. Carry-forwards de v1.0 deferreds NO se trasladan (decisi
 
 ## Session Continuity
 
-Last session: 2026-05-07 — Plan 06-02 ejecutado (canonical JOIN helper `src/lib/domain/join.ts`).
+Last session: 2026-05-07 — Plan 06-04 ejecutado (dark mode + paleta v2.0 + visibility por métrica). **Phase 6 cerrada (4/4 plans).**
 
 **v2.0 actions tomadas hoy:**
 - ✅ `/gsd:new-milestone` — milestone iniciado
@@ -83,10 +87,11 @@ Last session: 2026-05-07 — Plan 06-02 ejecutado (canonical JOIN helper `src/li
 - ✅ `/gsd:execute-plan 06-01` — `src/lib/domain/parsers.ts` creado; `schemas.ts` refactorizado a delegar; tsc + lint + build green
 - ✅ `/gsd:execute-plan 06-03` (Wave 1) — `DashboardFilters.status`/`tipo` + `StatusFilter`/`TypeFilter` + header wired; tsc + lint + build green; zero deps añadidas
 - ✅ `/gsd:execute-plan 06-02` (Wave 1) — `src/lib/domain/join.ts` (148 LOC) con `joinPayouts`/`joinIndex`/`joinMatchStats`/`JoinedPayout`; live match-rate 768/797 (96.36%, ≥96% threshold); tsc + lint + build green; zero deps añadidas
+- ✅ `/gsd:execute-plan 06-04` (Wave 2) — next-themes ThemeProvider + ThemeToggle + 9 paleta CSS vars (light + dark) + `data-presenter-metric-hide` rule + header polish; tsc + lint + build green; zero deps añadidas; user-approved visual checkpoint
 
 **Next:**
-1. Wave 1 sibling plan (06-04) — completion pendiente del agente paralelo en este wave
-2. Tras Wave 1 completar, validate `/gsd:execute-phase` checkpoint o avanzar a Phase 7 planning
+1. `/gsd:execute-phase 6` close-out — orchestrator updates ROADMAP.md (Phase 6 → ✅ shipped) and REQUIREMENTS.md (CROSS-V2-01..07 → ✅) at phase-completion step
+2. `/gsd:plan-phase 7` — unification of Bonos + Payouts under v2.0 sections layout
 
-Stopped at: Completed 06-02-PLAN.md
+Stopped at: Completed 06-04-PLAN.md (Phase 6 fully closed)
 Resume file: None
