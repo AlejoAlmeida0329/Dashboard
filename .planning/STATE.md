@@ -18,28 +18,30 @@ Progress: v1.0 ✅ SHIPPED · v2.0 🚧 in planning
 
 ## Accumulated Context
 
-### v2.0 Goal (from user PRD)
+### v2.0 Goal (from user PRD v2)
 
-Refactor el dashboard a vista de analytics operativa según el PRD detallado del usuario (`~/Downloads/PRD_Dashboard_Tikin.docx`, parsed to `/tmp/prd_tikin.txt` durante la sesión 2026-05-07). El usuario aprobó el design system de v1.0 ("me gusta cómo se ven las gráficas") pero quiere reescribir qué se muestra y bajo qué lente: pasar del lente revenue (GMV / Comisión / Take rate / Empresas) al lente operativo (usuarios activos / tasa de éxito / tipos de transacción / eficiencia / comportamiento por tikintag).
+Refactor el dashboard a vista de analytics operativa según el PRD detallado del usuario (`~/Downloads/PRD_Dashboard_Tikin_v2.docx`, parsed to `/tmp/prd_tikin_v2.txt` durante la sesión 2026-05-07; supersede `PRD_Dashboard_Tikin.docx` v1). El usuario aprobó el design system de v1.0 ("me gusta cómo se ven las gráficas") pero quiere reescribir qué se muestra y bajo qué lente: pasar del lente revenue (GMV / Comisión / Take rate / Empresas) al lente operativo (usuarios activos / tasa de éxito / tipos de transacción / eficiencia / comportamiento por tikintag).
 
-**5 secciones del PRD:**
+**6 secciones del PRD v2:**
 1. **Inicio** — usuarios activos, volumen IN/OUT, tasa de éxito global, donut por tipo, actividad en el tiempo, top 10 usuarios
 2. **Bonos** — split source/destination con top emisores y receptores, flujo enviados vs recibidos
 3. **Payouts** — extender con tiempo promedio (parsing Total Time), aging alert (>2h), razones de fallo, pagos a terceros (Holder ≠ tikintag)
-4. **Uso Tarjeta** (NEW) — reemplaza "Recargas" con compras PURCHASE: KPIs + adopción + tendencia + top usuarios
-5. **Vista Cliente** — más rica que v1.0: selector tikintag (235), 5 KPIs cabecera (incluye balance + pocket), retiros enriquecidos (JOIN), bonos in/out, **P2P (NUEVO)**, compras tarjeta, tiempo vs benchmark, timeline cronológico
+4. **Uso Tarjeta (NEW)** — compras PURCHASE: KPIs + adopción + tendencia + top usuarios
+5. **Vista Cliente** — más rica que v1.0, **dual-purpose declarado por PRD** (🔍 Uso Interno + 🤝 Reuniones con Clientes): selector tikintag (235), 5 KPIs cabecera (incluye balance + pocket), retiros enriquecidos (JOIN), bonos in/out, **P2P (NUEVO)**, compras tarjeta, tiempo vs benchmark, timeline cronológico
+6. **Recargas (refactored)** — PAYIN_PSE + **PAYIN_TRANSFER (NEW)** = 137 recargas, 40 usuarios, $743M, 100% completadas. 8 métricas: total · volumen · usuarios % adopción · PSE vs Transfer · promedio · distribución de montos · top usuarios · tendencia temporal.
 
 **Cross-cutting nuevos:**
 - Filtros globales: estado de transacción + tipo de transacción (multi-select)
 - Parsing de campos texto: Aging/Total Time → minutes; Value/Transaction Cost → number
-- JOIN canónico: `BD_Plataforma.transaction_id ↔ BD_Payouts.Transaction ID` (PRD original decía `reference` — verificado con datos: 0/798 vs 773/798 match; corregido en v2.0)
+- JOIN canónico: campo real `BD_Plataforma.transaction_id` ↔ `BD_Payouts.Transaction ID`. PRD lo nombra semánticamente `reference` (legacy/conceptual). Decisión del usuario (opción C, 2026-05-07): código usa `transaction_id`; JSDoc cita el nombre PRD por convención. Verificación con datos: 773/798 match con `transaction_id`, 0/798 con la columna `reference` real (que contiene hex hashes blockchain, no UUIDs).
+- **Modo Presentación + cliente-foco share-URL preservados** — justificado por dual-purpose de Vista Cliente. Visibility por métrica: KPIs cabecera + bonos + P2P + compras + tiempo vs benchmark + retiros enriquecidos = visibles en `presenter=1`. Timeline cronológico crudo = `presenter-hide` (uso interno).
 
 ### Reuse strategy v1.0 → v2.0
 
-- ✓ Reuse: auth flow, Sheets adapter shell, force-dynamic page pattern, design system (shadcn/ui + Tailwind + recharts), KPICard / Card / Tabs componentes, layout `(protected)` + `PresenterFrame`, `parseFilters` / `buildUrl`.
-- 🔄 Refactor: domain libraries (lente cambió empresas→tikintags), schema (parse text fields), filtros globales (añadir 2 nuevos).
-- ❌ Replace: pestaña Recargas → Uso Tarjeta; KPIs revenue (Comisión / Take rate / GMV) → KPIs operativos.
-- ❓ TBD: Modo Presentación + cliente-foco share-URL — el PRD no los menciona; decisión durante define-requirements.
+- ✓ Reuse: auth flow, Sheets adapter shell, force-dynamic page pattern, design system (shadcn/ui + Tailwind + recharts), KPICard / Card / Tabs componentes, layout `(protected)` + `PresenterFrame`, `parseFilters` / `buildUrl`, **Modo Presentación + cliente-foco share-URL** (rescatados — justificado por dual-purpose de Vista Cliente del PRD v2).
+- 🔄 Refactor: domain libraries (lente cambió empresas→tikintags), schema (parse text fields), filtros globales (añadir 2 nuevos), pestaña Recargas (extender PAYIN_PSE → PAYIN_PSE + PAYIN_TRANSFER, refactorizar métricas según PRD v2 sección 6).
+- ➕ NEW: pestaña Uso Tarjeta (PURCHASE), pagos a terceros en Payouts, P2P en Vista Cliente, donut por tipo en Inicio, distribución de montos en Recargas.
+- ❌ Eliminate: KPIs revenue (Comisión / Take rate / GMV) → KPIs operativos; leaderboard de bonos por revenue → top emisores/receptores; "hechos curados" (Phase 4 v1.0) → reemplazados por donut + actividad temporal.
 
 ### Open Blockers (carry-forward al milestone v2.0)
 
