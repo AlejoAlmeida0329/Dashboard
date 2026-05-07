@@ -628,3 +628,268 @@ export function aggregateRechargesByDateV2(
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   );
 }
+
+// === v2 Output types — adoption + method split + buckets + top users =======
+
+/**
+ * Recharge adoption — what fraction of all known users have done at least
+ * one recarga in the filtered universe.
+ *
+ * Mirrors the shape of `aggregatePurchaseAdoption` in `cardUsage.ts` (Plan
+ * 08-01) — distinct `tikintag` numerator + denominator, ratio. Cite REC-V2-03.
+ * PRD baseline reading: 40 / 235 ≈ 17% adoption.
+ */
+export interface RechargeAdoption {
+  /** Distinct `tikintag` count among `recargaRows`. */
+  usersWithRecharge: number;
+  /** Distinct `tikintag` count across the entire `allTx` universe. */
+  totalUsers: number;
+  /** `usersWithRecharge / totalUsers`; `0` when `totalUsers` is `0`. */
+  adoptionRate: number;
+}
+
+/**
+ * Method split — PSE vs TRANSFER counts, volumes, and shares.
+ *
+ * Shares are 0..1 BY COUNT (not by volume). PRD baseline reading
+ * "85% PSE / 15% Transfer" describes the COUNT split, not the COP split —
+ * PSE rows are typically smaller individual amounts but happen more often;
+ * a volume-weighted share would tell a different story than the one the
+ * page caption is anchored to. (REC-V2-04.)
+ *
+ * Returned as a literal `{ pse, transfer }` shape (NOT an array) so the v2
+ * page can bind two cards directly off `result.pse` / `result.transfer`
+ * without `.find()` / index lookup.
+ */
+export interface RechargeMethodSplit {
+  pse: { count: number; volumen: number; share: number };
+  transfer: { count: number; volumen: number; share: number };
+}
+
+/**
+ * One bucket of the recarga amount distribution (REC-V2-06).
+ *
+ * Three fixed buckets: <$100K, $100K-$1M, >$1M. Boundary inclusivity per
+ * `aggregateRechargeAmountDistribution` JSDoc (`<` vs `<=`). The chart
+ * always renders all 3 buckets even when some are zero so the x-axis is
+ * stable across filter changes.
+ */
+export interface RechargeAmountBucket {
+  /** Display label: `"<$100K"` | `"$100K-$1M"` | `">$1M"`. */
+  label: string;
+  /** Lower bound in COP; `null` for the bottom bucket. */
+  lowerCOP: number | null;
+  /** Upper bound in COP; `null` for the top bucket. */
+  upperCOP: number | null;
+  /** Number of recargas falling in this bucket. */
+  count: number;
+  /** Sum of `Math.abs(monto)` for recargas in this bucket (COP). */
+  volumenCOP: number;
+}
+
+/**
+ * One row of the top-rechargers ranking (REC-V2-07) — grouped by
+ * `tikintag` (NOT by `empresa_id`). Today they're the same projection per
+ * the empresa-identity decision in 02-01-SUMMARY, but the v2 page binds to
+ * the user-level identifier so a future empresa↔tikintag separation
+ * doesn't change the ranking semantics.
+ */
+export interface TopRecharger {
+  /** The recharger's tikintag (e.g. `"$mario"`). */
+  tikintag: string;
+  /**
+   * Best-effort empresa display label from the first row seen for this
+   * tikintag (currently equal to tikintag per 02-01 empresa-identity rule).
+   * `undefined` only if no rows had a defined `empresa_nombre` (defensive).
+   */
+  empresa: string | undefined;
+  /** Number of recargas this tikintag did in the filtered range. */
+  recargas: number;
+  /** Sum of `Math.abs(monto)` across those recargas (COP). */
+  volumenCOP: number;
+  /** `volumenCOP / recargas`; `0` when `recargas` is `0` (zero-safe). */
+  recargaPromedio: number;
+}
+
+// === v2 Aggregations =======================================================
+
+/**
+ * Compute recharge adoption across the period-filtered universe (REC-V2-03).
+ *
+ * `allTx` is the period-filtered total transaction universe (any `tipo`,
+ * any `direction`, any `status`) — used to count distinct users who EXIST in
+ * the platform during the period. `recargaRows` is the recarga-filtered
+ * subset (e.g. output of `filterRecargasV2`). Distinct counts use
+ * `tikintag`; rows with empty/undefined `tikintag` are excluded from BOTH
+ * numerator and denominator (defensive — a user without a tikintag can't
+ * be counted).
+ *
+ * Pure. Empty `allTx` → `{ usersWithRecharge: 0, totalUsers: 0,
+ * adoptionRate: 0 }` (no NaN / Infinity).
+ *
+ * PRD baseline (Plan 08 RESEARCH): 40 distinct rechargers / 235 total
+ * users ≈ 17% adoption.
+ */
+export function aggregateRechargeAdoption(
+  allTx: Transaction[],
+  recargaRows: Transaction[],
+): RechargeAdoption {
+  const totalSet = new Set<string>();
+  for (const t of allTx) {
+    if (t.tikintag && t.tikintag.length > 0) totalSet.add(t.tikintag);
+  }
+  const rechargerSet = new Set<string>();
+  for (const r of recargaRows) {
+    if (r.tikintag && r.tikintag.length > 0) rechargerSet.add(r.tikintag);
+  }
+  const totalUsers = totalSet.size;
+  const usersWithRecharge = rechargerSet.size;
+  const adoptionRate = totalUsers > 0 ? usersWithRecharge / totalUsers : 0;
+  return { usersWithRecharge, totalUsers, adoptionRate };
+}
+
+/**
+ * Compute the PSE vs TRANSFER method split (REC-V2-04).
+ *
+ * Partitions the input by `tipo` into PSE vs TRANSFER buckets; per bucket
+ * computes count, sum `Math.abs(monto)`, and share = `count / totalCount`.
+ * Total count = PSE count + TRANSFER count (rows with any other `tipo`
+ * shouldn't appear in the input — `filterRecargasV2` already gates on
+ * RECHARGE_TIPOS — but if they did, they'd be ignored, not mixed in).
+ *
+ * Pure. Empty input → both buckets zero with `share: 0` (no NaN).
+ *
+ * Decision (cited above on `RechargeMethodSplit`): shares are by COUNT,
+ * not by COP. Matches PRD baseline reading "85% PSE / 15% Transfer".
+ */
+export function aggregateRechargeMethodSplit(
+  rows: Transaction[],
+): RechargeMethodSplit {
+  let pseCount = 0;
+  let pseVolumen = 0;
+  let transferCount = 0;
+  let transferVolumen = 0;
+  for (const r of rows) {
+    const amount = Math.abs(r.monto);
+    if (r.tipo === "PAYIN_PSE") {
+      pseCount += 1;
+      pseVolumen += amount;
+    } else if (r.tipo === "PAYIN_TRANSFER") {
+      transferCount += 1;
+      transferVolumen += amount;
+    }
+  }
+  const totalCount = pseCount + transferCount;
+  const pseShare = totalCount > 0 ? pseCount / totalCount : 0;
+  const transferShare = totalCount > 0 ? transferCount / totalCount : 0;
+  return {
+    pse: { count: pseCount, volumen: pseVolumen, share: pseShare },
+    transfer: {
+      count: transferCount,
+      volumen: transferVolumen,
+      share: transferShare,
+    },
+  };
+}
+
+/**
+ * Bucket recargas into 3 fixed amount tiers (REC-V2-06).
+ *
+ * Buckets, in returned order:
+ *   1. `<$100K`    — `amount < 100_000`              (lowerCOP: null,    upperCOP: 100_000)
+ *   2. `$100K-$1M` — `100_000 <= amount <= 1_000_000` (lowerCOP: 100_000, upperCOP: 1_000_000)
+ *   3. `>$1M`      — `amount > 1_000_000`            (lowerCOP: 1_000_000, upperCOP: null)
+ *
+ * Boundary inclusivity (UNAMBIGUOUS):
+ *   - The middle bucket is INCLUSIVE on BOTH ends — exactly $100K lands
+ *     in the middle, exactly $1M lands in the middle.
+ *   - The bottom bucket is `< 100K` (strictly less than).
+ *   - The top bucket is `> 1M` (strictly greater than).
+ *
+ * Always returns all 3 buckets even when some are zero — the v2 chart
+ * needs a stable axis across filter changes (a bucket disappearing
+ * mid-render would re-shuffle the layout).
+ *
+ * Amounts use `Math.abs(monto)` (defensive — direction='in' rows are
+ * already positive in production but the abs guard matches the rest of
+ * the v2 surface).
+ */
+export function aggregateRechargeAmountDistribution(
+  rows: Transaction[],
+): RechargeAmountBucket[] {
+  const buckets: RechargeAmountBucket[] = [
+    { label: "<$100K", lowerCOP: null, upperCOP: 100_000, count: 0, volumenCOP: 0 },
+    {
+      label: "$100K-$1M",
+      lowerCOP: 100_000,
+      upperCOP: 1_000_000,
+      count: 0,
+      volumenCOP: 0,
+    },
+    { label: ">$1M", lowerCOP: 1_000_000, upperCOP: null, count: 0, volumenCOP: 0 },
+  ];
+  for (const r of rows) {
+    const amount = Math.abs(r.monto);
+    let bucket: RechargeAmountBucket;
+    if (amount < 100_000) {
+      bucket = buckets[0];
+    } else if (amount <= 1_000_000) {
+      bucket = buckets[1];
+    } else {
+      bucket = buckets[2];
+    }
+    bucket.count += 1;
+    bucket.volumenCOP += amount;
+  }
+  return buckets;
+}
+
+/**
+ * Top rechargers ranked by `volumenCOP` DESC (REC-V2-07).
+ *
+ * Groups recargas by `tikintag`. Rows with empty/undefined `tikintag` are
+ * skipped defensively (cannot attribute a recarga to no one). Per group:
+ *   - `recargas`: number of rows
+ *   - `volumenCOP`: sum of `Math.abs(monto)`
+ *   - `empresa`: first-seen `empresa_nombre` for that tikintag (today
+ *     equal to tikintag per the 02-01 empresa-identity decision; will
+ *     diverge naturally once a real display column lands)
+ *   - `recargaPromedio`: `volumenCOP / recargas` (zero-safe via `recargas > 0`
+ *     guard, though by construction every group has `recargas >= 1`)
+ *
+ * Default `limit = 10` per REC-V2-07. Returns a NEW array sliced to the
+ * top-N — no mutation of the input.
+ *
+ * Pure. O(n + k log k) where k = distinct tikintags.
+ */
+export function aggregateTopRechargers(
+  rows: Transaction[],
+  limit = 10,
+): TopRecharger[] {
+  const acc = new Map<string, TopRecharger>();
+  for (const r of rows) {
+    const tikintag = r.tikintag;
+    if (!tikintag || tikintag.length === 0) continue;
+    const amount = Math.abs(r.monto);
+    const cur = acc.get(tikintag);
+    if (cur) {
+      cur.recargas += 1;
+      cur.volumenCOP += amount;
+    } else {
+      acc.set(tikintag, {
+        tikintag,
+        empresa: r.empresa_nombre || undefined,
+        recargas: 1,
+        volumenCOP: amount,
+        recargaPromedio: 0, // filled in second pass
+      });
+    }
+  }
+  const ranked = Array.from(acc.values());
+  for (const row of ranked) {
+    row.recargaPromedio =
+      row.recargas > 0 ? row.volumenCOP / row.recargas : 0;
+  }
+  ranked.sort((a, b) => b.volumenCOP - a.volumenCOP);
+  return ranked.slice(0, limit);
+}
