@@ -32,6 +32,7 @@ import { StatusFilter } from "@/components/filters/status-filter";
 import { TypeFilter } from "@/components/filters/type-filter";
 import { LastRefresh } from "@/components/layout/last-refresh";
 import { PresenterToggle } from "@/components/layout/presenter-toggle";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { getEmpresaRegistry } from "@/lib/domain/empresas";
 import { getCachedTransactions } from "@/lib/sheets/transactions";
 
@@ -68,6 +69,7 @@ export async function DashboardHeader() {
 
         <div className="ml-auto flex items-center gap-4">
           <LastRefresh />
+          <ThemeToggle />
           <PresenterToggle />
           <a
             href="/logout"

@@ -20,6 +20,14 @@ export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Canonical next-themes SSR-mount gate: flips a flag on the first
+    // client render so the aria-label below reflects the *resolved*
+    // theme (which is undefined during SSR). React 19 lint flags
+    // setState-in-effect by default — suppressed here because this is
+    // the documented next-themes pattern (https://github.com/pacocoursey/next-themes#avoid-hydration-mismatch)
+    // and the alternative (rendering theme-dependent content during
+    // SSR) causes the hydration mismatch we're trying to avoid.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
