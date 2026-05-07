@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-05-07 al iniciar milestone v2.0 Analytics)
 
 **Core value:** Una sola URL donde el equipo de Tikin ve métricas frescas del negocio sin abrir Sheets, presentable cuando se proyecta a clientes.
-**Current focus:** Phase 7 — Bonos + Payouts (rebuilt + extended) — Wave 1 complete, Wave 2 ready
+**Current focus:** Phase 7 — Bonos + Payouts (rebuilt + extended) — Wave 2 in progress (07-04 Payouts complete; 07-02 Bonos finalizing in parallel)
 
 ## Current Position
 
 Phase: 7 of 10 (Bonos + Payouts)
-Plan: 07-01 + 07-03 complete (Wave 1 done — both wave-1 plans committed in parallel without race recovery)
-Status: In progress — Phase 7 Wave 1 closed, Wave 2 (07-02 + 07-04) ready
-Last activity: 2026-05-07 — Completed 07-03-PLAN.md (Payouts domain v2 time-first aggregations + first joinPayouts() consumer)
+Plan: 07-04 complete (Payouts page v2 time-first cockpit + partial v1 prune); 07-02 page commits on master (`e6f9ab6` + `6c74f52`) finalizing in parallel
+Status: In progress — Phase 7 Wave 2 nearly complete, 07-02 sibling finalize race tolerated
+Last activity: 2026-05-07 — Completed 07-04-PLAN.md (Payouts page v2 — TIME-FIRST cockpit + first production consumer of joinPayouts() + partial v1 prune deferring 4 symbols still consumed by Inicio + Clientes pages)
 
-Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 1/5 phases shipped + Phase 7 2/4 plans · Phase 7: 2/4 plans ██░░ (50%)
+Progress: v1.0 ✅ SHIPPED (Phases 1-5) · v2.0 🚧 1/5 phases shipped + Phase 7 3/4 plans · Phase 7: 3/4 plans ███░ (75%)
 
 ## Performance Metrics
 
@@ -70,6 +70,10 @@ Decisions están loggeadas en PROJECT.md Key Decisions table. Recent ones que af
 - **Defensive completed-only inside time aggregations** (Plan 07-03) — `aggregateAverageProcessingMinutes` and `aggregateFailureReasons` self-filter to the relevant state inside the function, even though callers typically pre-filter. Prevents Aging-fallback contamination of a completed-mean (the silent semantic drift v1 03-CONTEXT.md essentials warned about). `latencySeconds` carries `Total Time` for completed rows and `Aging` for non-completed; these aggregations refuse to mix the two.
 - **`summarizePayoutsByState.total` uses `payouts.length`** (Plan 07-03) — not `completed + failed + inProgress`. If upstream Sheet ever introduces a 4th state (e.g. `cancelled`, `pending_review`), `successRate` denominator stays correct (numerator = completed, denominator = total-attempted including the unrecognized state); the 3 named counters quietly underrepresent until the schema is updated. Defensive-by-default.
 - **Wave-1 v2-suffix coexistence convention** (Plans 07-01 + 07-03 in parallel) — both wave-1 plans independently chose `<fn>V2` suffix for their parallel additions (`filterBonosV2`, `summarizeBonosV2`, `filterPayoutsV2`, `summarizePayoutsByState`). Convention emerged organically without explicit cross-plan coordination — Plans 07-02 + 07-04 (Wave 2) will swap imports and prune v1 fns in a single cohesive diff each.
+- **Partial v1 payouts prune — 4 symbols KEPT alive deferred to Phase 9 + Phase 10** (Plan 07-04 deviation, Rule 4 architectural / scope). Plan 07-04 was supposed to delete the full v1 set per Plan 07-03's pruning list, but a `grep -rE` audit of `src/` BEFORE deletion surfaced 4 symbols still consumed outside `/payouts/page.tsx`: **`filterPayouts`** (used by `inicio/page.tsx` Latencia destacada hecho + `clientes/[empresaId]/page.tsx` mini cards), **`summarizePayouts`** (same two consumers), **`PayoutSummary`** interface (used by `HechosCurados.tsx` + `EmpresaMiniCards.tsx` as prop type), and **`COMPLETED_PAYOUT_STATES`** constant (still consumed internally by the kept-alive `filterPayouts`). Plan 07-03 SUMMARY's pruning list assumed `/payouts/page.tsx` was the sole consumer — incorrect. Plan 07-04's verify section explicitly anticipates this gate ("STOP and surface — that file needs a swap before the prune can land") and the output spec sanctions a flag-for-future-cleanup branch. **DELETED in Plan 07-04** (only consumed by the rewritten page + deleted v1 leaves): `filterPayoutsByPeriodOnly`, `aggregateLatencyHistogram`, `LatencyBucket`, `LatencyBucketLabel`, `HISTOGRAM_BUCKET_ORDER`, `aggregateSuccessRate`, `SuccessRate`. **Migration path:** Phase 10 (Inicio v2 rewrite) replaces `filterPayouts + summarizePayouts` for the Latencia destacada hecho with v2 helpers (`summarizePayoutsByState` + `aggregateAverageProcessingMinutes`); Phase 9 (Vista Cliente v2 rewrite of `clientes/[empresaId]/page.tsx`) does the same for empresa mini-cards. After BOTH phases land, the 4 kept-alive symbols become orphans — final prune lands as a 1-task cleanup in whichever phase touches `payouts.ts` last. **No behavior change to Inicio or Clientes pages today** — they keep building and rendering identically against the kept-alive surface.
+- **Time-first cockpit layout pattern established** (Plan 07-04 PAY-V2-01..08) — PRIMARY KPI text-4xl with section accent (`text-section-payouts`); semáforo-bound color on the second protagonist via threshold helper (`successRateAccent`: ≥95% verde, ≥85% amber, else rojo); conditional null-render alert between protagonists and quality semáforo (AgingAlert returns `null` when `rows.length === 0` — health = absence of card, not a positive placeholder); diagnostic layer at bottom in `lg:grid-cols-2`. Reusable shape for any future operational/quality dashboards (Phase 9 Vista Cliente expected to inherit). Conditional null-render pattern reusable for any future alert/queue widget.
+- **JoinedPayout pipeline at page-composition** (Plan 07-04 first production wiring) — page composition runs `joinPayouts(transactions, completed)` ONCE per request, then chains the result into `aggregateThirdPartyPayouts`. Confirms the Plan 06-02 + Plan 07-03 design contract (one-JOIN-per-request budget). React `cache()` dedupes the BD_Plataforma fetch with DashboardHeader's empresa-registry call, so the always-on JOIN doesn't double-pay quota. Phase 9 Vista Cliente will reuse the same pipeline shape (run JOIN once, chain into multiple aggregations for empresa enrichment + tikintag-based metrics).
+- **`PayoutState` type lives in `types.ts`, not re-exported from `payouts.ts`** (Plan 07-04 import-fix) — `ThirdPartyPayouts.tsx` initially imported `PayoutState` from `@/lib/domain/payouts` (where the plan implicitly suggested), tsc surfaced `TS2459: declares locally but not exported`. Resolution: `import type { PayoutState } from "@/lib/domain/types";`. Future v2 components rendering payout state badges should import directly from `types.ts`. (Note: Phase 9+ may consider whether to re-export `PayoutState` from `payouts.ts` for ergonomics — for now, direct-from-types-ts is the canonical path.)
 
 ### Pending Todos
 
@@ -87,7 +91,7 @@ Ninguno aún para v2.0. Carry-forwards de v1.0 deferreds NO se trasladan (decisi
 
 ## Session Continuity
 
-Last session: 2026-05-07 — Plans 07-01 + 07-03 ejecutados en paralelo (Wave 1 of Phase 7). Both v2 domain libraries (Bonos + Payouts) listas para Wave 2 page-rebuild plans (07-02 + 07-04). **Phase 7: 2/4 plans (50%).**
+Last session: 2026-05-07 — Plan 07-04 (Wave 2 Payouts page rebuild) ejecutado y aprobado en visual checkpoint; Plan 07-02 (Wave 2 Bonos page rebuild) finalizando en paralelo (page commits `e6f9ab6` + `6c74f52` ya en master). **Phase 7: 3/4 plans (75%).**
 
 **v2.0 actions tomadas hoy:**
 - ✅ `/gsd:new-milestone` — milestone iniciado
@@ -103,9 +107,13 @@ Last session: 2026-05-07 — Plans 07-01 + 07-03 ejecutados en paralelo (Wave 1 
 - ✅ `/gsd:execute-plan 07-01` (Wave 1) — Bonos domain v2: `filterBonosV2` + `summarizeBonosV2` + `aggregateBonosByDateV2` + `aggregateTopEmisores` + `aggregateTopReceptores` + 3 v2 types (`BonoSummaryV2`, `BonoByDateV2`, `BonoTikintagRow`) + `Transaction.sourceTransferTikintag` / `destinationTransferTikintag` (pure-add 2-edit schema); v1 byte-identical; tsc + lint (0 errors) + build green; parallel-wave git race con sibling 07-03 manejado vía explicit `--` pathspec
 - ✅ `/gsd:execute-plan 07-03` (Wave 1) — Payouts domain v2: `filterPayoutsV2` + `summarizePayoutsByState` + `aggregateAverageProcessingMinutes` + `aggregateAgingAlertPending` + `aggregateFailureReasons` + `aggregateThirdPartyPayouts` (first production consumer of Plan 06-02 `joinPayouts()`); 4 new types; v1 byte-identical; tsc + lint + build green; zero deps; no parallel-wave git race despite shared `src/lib/domain/` directory
 
-**Next:**
-1. `/gsd:execute-plan 07-02` (Wave 2) — Bonos page rebuild: import swap from v1 → v2 fns + delete v1 stragglers in one cohesive diff
-2. `/gsd:execute-plan 07-04` (Wave 2) — Payouts page rebuild: import swap + delete v1 stragglers (`filterPayouts`, `filterPayoutsByPeriodOnly`, `summarizePayouts`, `aggregateLatencyHistogram`, `aggregateSuccessRate`, `COMPLETED_PAYOUT_STATES`); KEEP `aggregateTopBancos` + `quantileSorted` (still consumed)
+**Phase 7 Wave 2 actions (2026-05-07, parallel orchestration):**
+- ✅ `/gsd:execute-plan 07-04` (Wave 2) — Payouts page rebuild: 5 new v2 leaf components (PayoutsKPICardsV2, AgingAlert, StatusBreakdownCards, FailureReasons, ThirdPartyPayouts) + TopBancos restyle (section-payouts left-edge + per-row volume bars) + `formatMinutes` helper + page rewrite with TIME-FIRST cockpit (KPI header → AgingAlert conditional → StatusBreakdown → TopBancos → FailureReasons / ThirdParty in lg:grid-cols-2) + first production consumer of `joinPayouts()` chained into `aggregateThirdPartyPayouts`. **Partial v1 prune** (Rule 4 deviation): deleted 7 symbols whose only consumer was the rewritten page + 2 deleted v1 leaves (`PayoutsKPICards.tsx`, `LatencyHistogram.tsx`); KEPT alive 4 symbols (`filterPayouts`, `summarizePayouts`, `PayoutSummary`, `COMPLETED_PAYOUT_STATES`) still consumed by Inicio + Clientes pages — deferred to Phase 9 + Phase 10 page rewrites. tsc + lint (0 errors, 3 pre-existing warnings unchanged) + build all green; visual checkpoint approved by user.
+- 🚧 `/gsd:execute-plan 07-02` (Wave 2) — Bonos page rebuild: page commits `e6f9ab6` (page rewrite) + `6c74f52` (v2 leaves) on master; SUMMARY + STATE.md finalize race in parallel with this plan's finalize.
 
-Stopped at: Completed 07-03-PLAN.md (Phase 7 Wave 1 fully closed; 2/4 plans)
+**Next:**
+1. `/gsd:plan-phase 8` — Recargas (PSE + Transfer) page composition — first never-before-built section in v2.0 milestone
+2. Phase 9 (Vista Cliente v2) and Phase 10 (Inicio v2) inherit the deferred-prune migration: each must replace `filterPayouts + summarizePayouts + PayoutSummary` consumers with v2 helpers (`summarizePayoutsByState` + `aggregateAverageProcessingMinutes`) — final prune of the kept-alive 4 symbols lands when both rewrites are complete.
+
+Stopped at: Completed 07-04-PLAN.md (Phase 7 Wave 2 75% closed; 3/4 plans; 07-02 sibling finalize in flight)
 Resume file: None
