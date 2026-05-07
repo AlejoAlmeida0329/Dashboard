@@ -46,6 +46,15 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --color-section-inicio: var(--section-inicio);
+  --color-section-bonos: var(--section-bonos);
+  --color-section-payouts: var(--section-payouts);
+  --color-section-tarjeta: var(--section-tarjeta);
+  --color-section-clientes: var(--section-clientes);
+  --color-section-recargas: var(--section-recargas);
+  --color-status-success: var(--status-success);
+  --color-status-fail: var(--status-fail);
+  --color-status-pending: var(--status-pending);
 }
 
 :root {
@@ -72,6 +81,18 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  /* v2.0 Section palette — CROSS-V2-05 */
+  --section-inicio: oklch(0.51 0.23 277);    /* Indigo  ≈ #4F46E5 */
+  --section-bonos:  oklch(0.55 0.27 295);    /* Violet  ≈ #7C3AED */
+  --section-payouts: oklch(0.58 0.13 215);   /* Cyan    ≈ #0891B2 */
+  --section-tarjeta: oklch(0.66 0.16 65);    /* Amber   ≈ #D97706 */
+  --section-clientes: oklch(0.60 0.15 162);  /* Emerald ≈ #059669 */
+  --section-recargas: oklch(0.50 0.10 195);  /* Teal    ≈ #0F766E */
+
+  /* v2.0 Semantic status colors */
+  --status-success: oklch(0.60 0.15 162);    /* Verde  ≈ #059669 (= emerald, intencional) */
+  --status-fail:    oklch(0.58 0.23 27);     /* Rojo   ≈ #DC2626 */
+  --status-pending: oklch(0.66 0.16 65);     /* Amarillo ≈ #D97706 (= amber, intencional) */
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -115,6 +136,17 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  /* v2.0 Section palette — brighter on dark to keep contrast */
+  --section-inicio: oklch(0.66 0.20 277);
+  --section-bonos:  oklch(0.68 0.23 295);
+  --section-payouts: oklch(0.70 0.13 215);
+  --section-tarjeta: oklch(0.74 0.16 65);
+  --section-clientes: oklch(0.70 0.15 162);
+  --section-recargas: oklch(0.62 0.10 195);
+
+  --status-success: oklch(0.70 0.15 162);
+  --status-fail:    oklch(0.70 0.20 27);
+  --status-pending: oklch(0.74 0.16 65);
 }
 
 @layer base {
@@ -154,7 +186,7 @@
 /*
  * Cliente-foco gate.
  *
- * Two distinct visibility attributes share the data-presenter contract:
+ * Three distinct visibility attributes share the data-presenter contract:
  *
  *   - data-presenter-hide          → hidden in plain Modo Presentación
  *                                    (e.g. Comisión total, Take rate,
@@ -172,6 +204,15 @@
  *                                    "Empresas activas" chart that
  *                                    degenerates to a flat line at y=1).
  *
+ *   - data-presenter-metric-hide   → per-metric opt-out in Modo
+ *                                    Presentación (CROSS-V2-07). Default
+ *                                    policy is conservative: ALL metrics
+ *                                    remain visible in presenter unless a
+ *                                    metric explicitly carries this tag.
+ *                                    Phase 9 (Vista Cliente CLI-V2-08)
+ *                                    uses it for the cronological timeline
+ *                                    crudo and similar internal-only KPIs.
+ *
  * Plans 04-05 (EmpresasActivasChart card) and 04-07 (Inicio hechos
  * curados container) tag elements with data-presenter-empresa-hide and
  * inherit this rule — no further CSS or React conditional needed.
@@ -181,5 +222,23 @@
  * specific empresa id; this selector pairs that with data-presenter="on".
  */
 [data-presenter="on"][data-empresa-filter="active"] [data-presenter-empresa-hide] {
+  display: none !important;
+}
+
+/*
+ * Per-metric visibility opt-out — CROSS-V2-07.
+ *
+ * Default policy: in `?presenter=1`, ALL metrics remain visible
+ * (conservative — nothing disappears by accident when projecting to
+ * clients). Individual metrics that should NOT show in presenter
+ * (internal-only KPIs, raw timelines) are tagged with
+ * `data-presenter-metric-hide`. Phase 9 (Vista Cliente CLI-V2-08)
+ * uses this for the cronological timeline.
+ *
+ * Distinct from `data-presenter-hide` (chrome — filters, tab nav,
+ * logout) and `data-presenter-empresa-hide` (cliente-foco — multi-
+ * empresa elements that lose meaning when scoped to one client).
+ */
+[data-presenter="on"] [data-presenter-metric-hide] {
   display: none !important;
 }
