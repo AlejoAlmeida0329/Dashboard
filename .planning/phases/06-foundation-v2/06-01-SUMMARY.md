@@ -67,7 +67,7 @@ Each task was committed atomically:
 1. **Task 1: Create parsers.ts with public parsing API** — `5b3dab0` (feat)
 2. **Task 2: Refactor schemas.ts to delegate to parsers.ts** — `6689a2b` (refactor)
 
-**Plan metadata:** [pending — added at end of execution]
+**Plan metadata:** `007d89f` (docs)
 
 ## Files Created/Modified
 
