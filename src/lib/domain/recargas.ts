@@ -431,3 +431,200 @@ export function findRecargaMasGrande(
     return best;
   }, recargas[0]);
 }
+
+// ============================================================================
+// v2 — REC-V2-01..08 surface (appended Plan 08-03; v1 above is byte-identical)
+// ============================================================================
+//
+// Justification for v2: the new Recargas page (Plan 08-04) needs metrics that
+// v1's empresa-centric aggregations don't deliver — method split (PSE vs
+// TRANSFER), amount distribution histogram, adoption %, and top users by
+// `tikintag` (not by empresa_id, which is a projection of tikintag today but
+// could diverge tomorrow per the empresa-identity decision in 02-01-SUMMARY).
+//
+// The v2 filter scope is the SAME as v1 (PAYIN_PSE + PAYIN_TRANSFER); the
+// rebuild is justified by NEW METRICS, not changing what counts as a recarga.
+// v2 honors `filters.status` CSV (default `["completed"]`) so the URL state
+// contract from Plan 06-03 reaches the Recargas tab — v1 hardcoded
+// `status === "completed"`.
+//
+// Field-name reconciliation note (Plan 08-03 deviation [Rule 3 - Blocking]):
+// The PLAN.md draft referenced `tx.transactionAmount`, `tx.transferTikintag`,
+// `tx.transferEmpresa` — these do NOT exist on the `Transaction` interface.
+// Actual field names (per types.ts): `monto`, `tikintag`, `empresa_id` /
+// `empresa_nombre`. v2 functions below use the ACTUAL fields. The plan's
+// instruction "sum Math.abs(tx.transactionAmount)" maps to "sum
+// Math.abs(tx.monto)" — `Math.abs` retained for defensive symmetry with v2
+// patterns in `bonos.ts` / `payouts.ts` even though direction='in' rows
+// always have positive `monto` in production data.
+
+/** Header KPIs for the v2 Recargas tab. */
+export interface RecargaSummaryV2 {
+  /** Number of recargas in the filtered range (count of rows after filter). */
+  totalRecargas: number;
+  /** Sum of `Math.abs(monto)` across the filtered set (COP). */
+  volumenCOP: number;
+  /**
+   * Average ticket size: `volumenCOP / totalRecargas`. `0` (not NaN) when
+   * `totalRecargas` is `0`.
+   */
+  recargaPromedio: number;
+}
+
+/**
+ * One point on the v2 stacked timeline (PSE vs TRANSFER per Bogotá day).
+ *
+ * RICHER than v1 `RecargaByDate` (which only emits `count` + `monto` totals).
+ * The v2 stacked-trend chart needs per-method breakdown to visualize PSE vs
+ * TRANSFER over time (REC-V2-04 + REC-V2-08). v1 stays alive for clientes
+ * consumers that only need totals.
+ */
+export interface RecargaByDateV2 {
+  /** ISO date `YYYY-MM-DD` interpreted in Bogotá. */
+  date: string;
+  pseCount: number;
+  pseVolumen: number;
+  transferCount: number;
+  transferVolumen: number;
+  totalCount: number;
+  totalVolumen: number;
+}
+
+// === v2 Filter (allows BOTH PAYIN_PSE + PAYIN_TRANSFER; honors filters.status)
+
+/**
+ * v2 Recargas filter — broader than v1 `filterRecargas` in TWO ways:
+ *   1. `status`: NOT hardcoded to `completed`. When `filters.status` is set
+ *      (CROSS-V2-01 URL filter) honor it verbatim; when undefined or empty
+ *      default to `["completed"]` (matches Phase 6 contract + REC-V2-01
+ *      baseline of "100% completadas" → completed is the operating default
+ *      but lets failed/in-progress through when explicitly requested).
+ *   2. The downstream aggregations partition by `tipo` (PSE vs TRANSFER) at
+ *      aggregation time, NOT at filter time — so one filter pass can feed
+ *      `summarizeRecargasV2` + `aggregateRechargeMethodSplit` +
+ *      `aggregateRechargesByDateV2` without re-iterating.
+ *
+ * Same as v1:
+ *   - `tipo` ∈ RECHARGE_TIPOS (`PAYIN_PSE` + `PAYIN_TRANSFER`) — reuses
+ *     the existing module-private `RECHARGE_TIPOS` constant; do NOT redeclare.
+ *   - `direction === "in"` — recargas are money flowing IN to the platform.
+ *   - Bogotá-anchored from/to (inclusive ends).
+ *   - Optional `empresa` filter — `t.empresa_id === filters.empresa`.
+ *
+ * `filters.tipo` is INTENTIONALLY ignored: the Recargas tab is recharge-by-
+ * definition (PAYIN_PSE + PAYIN_TRANSFER); the global `tipo` multi-select
+ * drives Inicio/Vista Cliente cross-cuts, not this tab. (Same convention as
+ * `filterBonosV2` / `filterPayoutsV2`.)
+ *
+ * Pure: returns a new array; does not mutate `transactions`.
+ */
+export function filterRecargasV2(
+  transactions: Transaction[],
+  filters: DashboardFilters,
+): Transaction[] {
+  const rechargeTypeSet = new Set<string>(RECHARGE_TIPOS);
+  const fromTs = startOfDayBogotaTimestamp(filters.from);
+  const toTs = endOfDayBogotaTimestamp(filters.to);
+  const empresa = filters.empresa;
+  const statusSet =
+    filters.status && filters.status.length > 0
+      ? new Set<string>(filters.status)
+      : new Set<string>(["completed"]);
+
+  return transactions.filter((t) => {
+    if (!rechargeTypeSet.has(t.tipo)) return false;
+    if (t.direction !== "in") return false;
+    if (!statusSet.has(t.status)) return false;
+
+    const ts = t.fecha.getTime();
+    if (!Number.isFinite(ts)) return false;
+    if (ts < fromTs) return false;
+    if (ts > toTs) return false;
+
+    if (empresa && t.empresa_id !== empresa) return false;
+
+    return true;
+  });
+}
+
+/**
+ * Compute v2 header KPIs from an already-filtered list of recargas.
+ *
+ * Pure. Empty input → `{ totalRecargas: 0, volumenCOP: 0, recargaPromedio: 0 }`
+ * (no NaN / Infinity).
+ *
+ * @example
+ *   summarizeRecargasV2([{ monto: 100000, ... }, { monto: 50000, ... }])
+ *   // → { totalRecargas: 2, volumenCOP: 150000, recargaPromedio: 75000 }
+ *   summarizeRecargasV2([])
+ *   // → { totalRecargas: 0, volumenCOP: 0, recargaPromedio: 0 }
+ */
+export function summarizeRecargasV2(rows: Transaction[]): RecargaSummaryV2 {
+  let volumenCOP = 0;
+  for (const r of rows) {
+    volumenCOP += Math.abs(r.monto);
+  }
+  const totalRecargas = rows.length;
+  const recargaPromedio = totalRecargas > 0 ? volumenCOP / totalRecargas : 0;
+  return { totalRecargas, volumenCOP, recargaPromedio };
+}
+
+/**
+ * Group recargas by Bogotá calendar date producing one point per day with
+ * data, partitioning each day's count and volume by `tipo` (PSE vs TRANSFER).
+ *
+ * RICHER than v1 `aggregateRecargasByDate`, which emits totals only — needed
+ * for the v2 stacked trend chart that visualizes PSE vs TRANSFER over time
+ * (REC-V2-04 + REC-V2-08). v1 stays alive for clientes consumers that don't
+ * need the per-method split.
+ *
+ * Output is sorted ASCENDING by `date` so a line/bar chart can plot it
+ * without re-sorting. NO zero-fill — same convention as v1: days with zero
+ * recargas simply don't appear; the chart library handles continuous-axis
+ * spacing on its own.
+ *
+ * Empty input → `[]`.
+ *
+ * @example
+ *   aggregateRechargesByDateV2([
+ *     { tipo: "PAYIN_PSE",      fecha: ..., monto: 100000, ... },
+ *     { tipo: "PAYIN_TRANSFER", fecha: ..., monto: 200000, ... },
+ *   ])
+ *   // → [{ date: '2026-04-27', pseCount: 1, pseVolumen: 100000,
+ *   //      transferCount: 1, transferVolumen: 200000,
+ *   //      totalCount: 2, totalVolumen: 300000 }]
+ */
+export function aggregateRechargesByDateV2(
+  rows: Transaction[],
+): RecargaByDateV2[] {
+  const byDay = new Map<string, RecargaByDateV2>();
+  for (const r of rows) {
+    const date = formatInTimeZone(r.fecha, BOGOTA_TZ, "yyyy-MM-dd");
+    let cur = byDay.get(date);
+    if (!cur) {
+      cur = {
+        date,
+        pseCount: 0,
+        pseVolumen: 0,
+        transferCount: 0,
+        transferVolumen: 0,
+        totalCount: 0,
+        totalVolumen: 0,
+      };
+      byDay.set(date, cur);
+    }
+    const amount = Math.abs(r.monto);
+    cur.totalCount += 1;
+    cur.totalVolumen += amount;
+    if (r.tipo === "PAYIN_PSE") {
+      cur.pseCount += 1;
+      cur.pseVolumen += amount;
+    } else if (r.tipo === "PAYIN_TRANSFER") {
+      cur.transferCount += 1;
+      cur.transferVolumen += amount;
+    }
+  }
+  return Array.from(byDay.values()).sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
+}
