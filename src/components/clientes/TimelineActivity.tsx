@@ -216,14 +216,14 @@ export function TimelineActivity({ events }: Props) {
           </p>
         ) : (
           <ul className="space-y-3">
-            {events.map((evt) => {
+            {events.map((evt, idx) => {
               const { Icon, cls } = iconAndColor(evt.type);
               const badge = statusBadge(evt.status);
               const cp = counterpartyLabel(evt.type, evt.counterparty);
               const isTikintag = looksLikeTikintag(cp);
               return (
                 <li
-                  key={evt.id}
+                  key={evt.id || `noid-${idx}`}
                   className="flex items-start gap-3 border-b pb-3 last:border-b-0 last:pb-0"
                 >
                   <span className={`mt-0.5 flex-shrink-0 ${cls}`}>

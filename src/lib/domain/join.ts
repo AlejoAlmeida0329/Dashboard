@@ -84,6 +84,10 @@ export function joinIndex(
 ): Map<string, Transaction> {
   const byId = new Map<string, Transaction>();
   for (const t of transactions) {
+    // Skip rows with empty transaction_id (44 production rows from a
+    // platform bug). They cannot JOIN with BD_Payouts anyway, and indexing
+    // them under "" would collapse all 44 to one Map entry.
+    if (!t.id) continue;
     byId.set(t.id, t);
   }
   return byId;

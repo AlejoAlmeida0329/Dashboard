@@ -113,10 +113,19 @@ const Money = z.coerce.number().finite().min(-1e12).max(1e12);
  */
 export const TransactionRowSchema = z
   .object({
-    transaction_id: z.string().min(1),
+    // Optional: 44 production rows have an empty transaction_id (upstream
+    // platform bug — the row IS a real transaction, the ID just never got
+    // assigned). Rejecting them excluded 2 tikintags from the user pool and
+    // dropped 44 events from every aggregation. We accept them and let the
+    // BD_Payouts JOIN naturally skip rows without an ID (joinIndex filters
+    // empty keys to avoid Map collisions).
+    transaction_id: OptionalString,
     created_at: z.coerce.date(),
-    tikintag: z.string().min(1),
-    account_id: z.string().min(1),
+    // 8 production rows have a numeric-looking tikintag that the Sheets
+    // API returns as a number (UNFORMATTED_VALUE behavior). z.coerce.string
+    // converts via String(); .min(1) still rejects truly empty cells.
+    tikintag: z.coerce.string().min(1),
+    account_id: z.coerce.string().min(1),
     direction: z.string().transform((s): TransactionDirection => {
       const norm = s.trim().toLowerCase();
       return (KNOWN_DIRECTIONS as readonly string[]).includes(norm)
@@ -165,7 +174,7 @@ export const TransactionRowSchema = z
   })
   .transform(
     (parsed): Transaction => ({
-      id: parsed.transaction_id,
+      id: parsed.transaction_id ?? "",
       fecha: parsed.created_at,
       monto: parsed.amount,
       grossAmount: parsed.gross_amount,
