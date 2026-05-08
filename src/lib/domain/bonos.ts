@@ -109,6 +109,17 @@ export interface BonoSummaryV2 {
    * `0` (not NaN) when there are no bonos enviados.
    */
   ticketPromedio: number;
+  /**
+   * Sum of `comision` (= `total_transaction_fee` from the Sheet) across
+   * bonos enviados. The fee Tikin charged the empresa pagadora to send
+   * those bonos.
+   */
+  feeOut: number;
+  /**
+   * `feeOut / montoOut` — effective fee percentage on bonos enviados
+   * (0..1 fraction). `0` when `montoOut === 0`.
+   */
+  feeOutPct: number;
 }
 
 /** One point on the v2 timeline (in vs out per Bogotá day). */
@@ -199,6 +210,7 @@ export function summarizeBonosV2(bonos: Transaction[]): BonoSummaryV2 {
   let countOut = 0;
   let montoIn = 0;
   let montoOut = 0;
+  let feeOut = 0;
   for (const b of bonos) {
     if (b.direction === "in") {
       countIn += 1;
@@ -206,10 +218,20 @@ export function summarizeBonosV2(bonos: Transaction[]): BonoSummaryV2 {
     } else if (b.direction === "out") {
       countOut += 1;
       montoOut += b.monto;
+      feeOut += b.comision;
     }
   }
   const ticketPromedio = countOut > 0 ? montoOut / countOut : 0;
-  return { countIn, countOut, montoIn, montoOut, ticketPromedio };
+  const feeOutPct = montoOut > 0 ? feeOut / montoOut : 0;
+  return {
+    countIn,
+    countOut,
+    montoIn,
+    montoOut,
+    ticketPromedio,
+    feeOut,
+    feeOutPct,
+  };
 }
 
 /**
