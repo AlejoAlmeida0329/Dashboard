@@ -158,7 +158,11 @@ export default async function InicioPage({ searchParams }: PageProps) {
       : 30;
   const granularity: "day" | "week" = length > 60 ? "week" : "day";
 
-  const summary = summarizeInicioV2(inicioRows);
+  // summarizeInicioV2 takes BOTH the filtered rows (period-scoped counters)
+  // AND the full transaction pool (for the `usuariosTotal` denominator —
+  // the "alcance histórico" 235 baseline used in the leaf KPI's "X / Y
+  // usuarios totales" caption). Plan 10-04 fix.
+  const summary = summarizeInicioV2(inicioRows, allTx);
   const tipoDistribution = aggregateTransactionTypeDistribution(inicioRows, 6);
   const activitySeries =
     granularity === "week"

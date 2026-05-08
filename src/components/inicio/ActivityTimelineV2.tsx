@@ -7,22 +7,23 @@
  * window resize listener). The wrapping page stays a Server Component;
  * this leaf is the only piece that hydrates.
  *
- * Renders a `LineChart` with TWO series sharing the X-axis:
+ * Renders a `LineChart` with THREE series sharing the X-axis (Plan 10-04):
  *   - Series 1: `usuariosActivos`  — solid Indigo line on the LEFT y-axis
  *                                    (the protagonist — answers "¿cuántos
  *                                    tikintags distintos?").
- *   - Series 2: `volumen`          — dashed muted-Indigo line on the RIGHT
- *                                    y-axis (signed net flow per bucket;
- *                                    can be negative, so the y-axis allows
- *                                    decimals + crosses zero).
+ *   - Series 2: `volumenIn`        — green-ish line on the RIGHT y-axis —
+ *                                    recargas (PAYIN_*) per bucket.
+ *   - Series 3: `volumenOut`       — orange-ish line on the RIGHT y-axis —
+ *                                    PAYOUT_BANK + PURCHASE/BONUS/P2P
+ *                                    (canonical OUT side) per bucket.
  *
- * Color choices — pinned OKLCH literals anchored on the section-inicio
- * Indigo hue (~250). Recharts doesn't compose Tailwind opacity gracefully
- * on `<Line stroke=...>`; the muted-Indigo dashed companion line uses a
- * low-chroma variant so it visually recedes behind the protagonist users
- * line:
+ * Color choices — pinned OKLCH literals. Indigo for users (section
+ * accent); green for IN flow (matches the universal "money in = positive"
+ * convention); orange for OUT flow (warm = wallet-debit side). Recharts
+ * doesn't compose Tailwind opacity gracefully on `<Line stroke=...>`:
  *   solid Indigo  → oklch(0.55 0.18 250)
- *   muted Indigo  → oklch(0.55 0.05 250)  (low chroma)
+ *   green (IN)    → oklch(0.62 0.14 150)
+ *   orange (OUT)  → oklch(0.62 0.16 50)
  *
  * Granularity:
  *   The `granularity` prop is informational only (`"day" | "week"`) — the
@@ -55,7 +56,8 @@ import type { ActivityPointV2 } from "@/lib/domain/inicio";
 import { formatCOP, formatInteger } from "@/lib/format";
 
 const STROKE_USERS = "oklch(0.55 0.18 250)"; // Indigo — section-inicio hue
-const STROKE_VOLUMEN = "oklch(0.55 0.05 250)"; // Muted Indigo — companion stream
+const STROKE_VOLUMEN_IN = "oklch(0.62 0.14 150)"; // Green — IN flow
+const STROKE_VOLUMEN_OUT = "oklch(0.62 0.16 50)"; // Orange — OUT flow
 
 type Props = {
   data: ActivityPointV2[];
@@ -112,9 +114,13 @@ function ActivityTooltip({
         <span className="text-right text-foreground">
           {formatInteger(row.usuariosActivos)}
         </span>
-        <span className="text-muted-foreground">Volumen</span>
+        <span className="text-muted-foreground">Volumen IN</span>
         <span className="text-right text-foreground">
-          {formatCOP(row.volumen)}
+          {formatCOP(row.volumenIn)}
+        </span>
+        <span className="text-muted-foreground">Volumen OUT</span>
+        <span className="text-right text-foreground">
+          {formatCOP(row.volumenOut)}
         </span>
       </div>
     </div>
@@ -178,11 +184,19 @@ export function ActivityTimelineV2({ data, granularity }: Props) {
           <Line
             yAxisId="right"
             type="monotone"
-            dataKey="volumen"
-            name="Volumen"
-            stroke={STROKE_VOLUMEN}
+            dataKey="volumenIn"
+            name="Volumen IN"
+            stroke={STROKE_VOLUMEN_IN}
             strokeWidth={1.5}
-            strokeDasharray="4 4"
+            dot={false}
+          />
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="volumenOut"
+            name="Volumen OUT"
+            stroke={STROKE_VOLUMEN_OUT}
+            strokeWidth={1.5}
             dot={false}
           />
         </LineChart>

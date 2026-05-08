@@ -4,25 +4,27 @@
  * Server Component. Renders THREE KPI cards in a responsive 1 → 3 col grid:
  *   1. Usuarios activos        (formatInteger)        — PRIMARY, text-4xl,
  *                                                       section-inicio (Indigo)
+ *                                                       + caption "X / Y
+ *                                                       usuarios totales"
+ *                                                       (alcance histórico —
+ *                                                       Plan 10-04)
  *   2. Volumen IN vs OUT       (formatCOP, two stats)  — text-3xl, no accent
  *   3. Tasa de éxito           (formatPercent)         — semáforo: ≥95% verde,
  *                                                       ≥85% amber, else rojo
  *
- * Vision (Plan 10-02 layout decision — operative-lens):
- *   The first scroll answers "¿quién usa la plataforma y cuánto fluye?" before
- *   the donut/timeline diagnostic layer. Usuarios activos is visually the
- *   largest card (only one carrying the Indigo section accent — surgical
- *   single-metric application of `text-section-inicio` per the
- *   "EXACTLY ONE focal metric" rule). Volumen IN/OUT is the second
- *   protagonist (two stacked stats, no color accent to avoid Indigo
- *   repetition). Tasa de éxito carries the semáforo (PRD baseline 98.1% =
- *   green) so the at-a-glance health story is immediate.
+ * Vision (Plan 10-02 layout decision + Plan 10-04 reactivation lens):
+ *   The first scroll answers "¿quién usa la plataforma y cuánto fluye?"
+ *   before the donut/timeline diagnostic layer. Usuarios activos is
+ *   visually the largest card (only one carrying the Indigo section
+ *   accent). Below the big number, a small caption "X / Y usuarios
+ *   totales" surfaces the gap between period-active users and the full
+ *   pool — visualizing reactivation opportunity at a glance. PRD baseline:
+ *   235 usuarios totales (full BD_Plataforma DISTINCT tikintag count).
  *
  * Section accent rule (CROSS-V2-05 status palette):
  *   `text-section-inicio` (Indigo OKLCH from Phase 6 Plan 04) on EXACTLY ONE
  *   metric across the entire page. KPI #1 (Usuarios activos) carries it; the
- *   other 2 cards intentionally do NOT use this token. Verify post-build
- *   with `grep -rE "text-section-inicio" src/components/inicio/` → exactly 1 hit.
+ *   other 2 cards intentionally do NOT use this token.
  *
  * Format gates:
  *   - All COP, integer, percent values flow through `@/lib/format`. ZERO
@@ -34,8 +36,6 @@
  * successRateAccent helper:
  *   Inline 4-line copy of the same helper at PayoutsKPICardsV2:53 — the
  *   thresholds match (≥95 verde / ≥85 amber / else rojo per CROSS-V2-05).
- *   Local definition keeps each file's coloring contract self-contained
- *   without introducing a new shared module.
  */
 
 import {
@@ -67,7 +67,10 @@ function successRateAccent(rate: number): string {
 export function InicioKPIStripV2({ summary }: Props) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      {/* 1. Usuarios activos — PRIMARY (section accent: Indigo) */}
+      {/* 1. Usuarios activos — PRIMARY (section accent: Indigo).
+          Caption "X / Y usuarios totales" surfaces alcance histórico
+          (full-pool DISTINCT tikintag, PRD baseline 235) so the
+          reactivation gap is visible at a glance. */}
       <Card>
         <CardHeader>
           <CardDescription>Usuarios activos</CardDescription>
@@ -76,6 +79,10 @@ export function InicioKPIStripV2({ summary }: Props) {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {formatInteger(summary.usuariosActivos)} /{" "}
+            {formatInteger(summary.usuariosTotal)} usuarios totales
+          </p>
           <p className="text-xs text-muted-foreground">
             Tikintags distintos en el período
           </p>

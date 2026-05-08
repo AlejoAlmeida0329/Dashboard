@@ -1,51 +1,47 @@
 /**
  * Inicio domain — pure aggregations over `Transaction[]` for the /inicio
- * v2 operative-lens cockpit (Phase 10 — Plans 10-01 + 10-02).
+ * v2 operative-lens cockpit (Phase 10 — Plans 10-01 + 10-02 + 10-04 fix).
  *
  * This module owns the v2 cross-cutting Inicio aggregations:
  *   - filterInicioV2 — cross-cut filter (state-UNFILTERED + CSV-status +
  *     CSV-tipo + Bogotá-anchored from/to + optional empresa; BOTH directions)
- *   - summarizeInicioV2 — operative-lens KPIs (usuariosActivos + IN/OUT
- *     volumen + status counters + successRate)
+ *   - summarizeInicioV2 — operative-lens KPIs (usuariosActivos + usuariosTotal
+ *     + IN/OUT volumen + status counters + successRate)
  *   - aggregateTransactionTypeDistribution — donut data (top-N + Otros rollup)
  *   - aggregateActivityByDateV2 / aggregateActivityByWeekV2 — distinct-tikintag
- *     per bucket time series with signed volumen
- *   - aggregateTopUsersByVolume — top-N tikintag ranking by volumenNeto
+ *     per bucket time series with split IN/OUT volumen
+ *   - aggregateTopUsersByVolume — top-N tikintag ranking by volumenOut
  *
  * REQUIREMENTS traceability (milestones/v2.0-REQUIREMENTS.md):
  *   INI-V2-01  usuarios activos (DISTINCT tikintag) + volumen IN/OUT split
  *   INI-V2-02  tasa de éxito global con semáforo (98.1% baseline)
  *   INI-V2-03  donut por tipo (top 6 + Otros) — baseline 98.1% / 1.6% / 0.2%
  *   INI-V2-04  honor filters.tipo when present (cross-cut narrowing)
- *   INI-V2-05  actividad temporal — distinct tikintag por bucket + volumen
- *   INI-V2-06  top N usuarios por volumen NETO grouped by tikintag (NOT empresa)
+ *   INI-V2-05  actividad temporal — distinct tikintag por bucket + IN/OUT volumen
+ *   INI-V2-06  top N usuarios por volumen OUT grouped by tikintag (NOT empresa)
  *
  * History:
- *   - Plan 04-01..04-07: v1 revenue-lens surface (filterCompletedIn +
- *     summarizeInicio + aggregateGMV* / aggregateActiveEmpresas* + 4 v1
- *     types). DELETED 2026-05-08 in Plan 10-02 — the v2 surface fully
- *     replaces the v1 lens; the v1 inicio-hechos.ts module + 5 v1 leaves
- *     died in the same cohesive prune commit.
- *   - Plan 10-01: v2 surface appended below v1 (coexistence — fifth
- *     instance after bonos / payouts / recargas / cardUsage).
- *   - Plan 10-02: v1 block pruned; v2 surface byte-identical preservation.
- *     /inicio rewritten to consume the v2 surface; v1→v2 milestone migration
- *     end-to-end COMPLETE.
+ *   - Plan 04-01..04-07: v1 revenue-lens surface (DELETED 2026-05-08).
+ *   - Plan 10-01: v2 surface introduced.
+ *   - Plan 10-02: v1 block pruned; /inicio rewritten to v2.
+ *   - Plan 10-04 fix (2026-05-08): direction/tipo classification rewritten
+ *     to match BD_Plataforma's bidirectional double-row pattern. BD stores
+ *     BONUS / P2P / PURCHASE as TWO rows per event (one OUT for sender +
+ *     one IN for receiver, same monto magnitude). The v2 cross-cut now
+ *     classifies events using a TIPO-BASED platform-flow lens — IN ≡
+ *     PAYIN_PSE + PAYIN_TRANSFER, OUT ≡ PAYOUT_BANK + (BONUS/P2P/PURCHASE
+ *     limited to direction='out'). Each event counts ONCE on its OUT side;
+ *     the IN-side mirror of bidirectional events is intra-platform and not
+ *     a fresh inflow.
+ *     Also: usuariosActivos now reflects the filtered scope (period+empresa)
+ *     while a NEW usuariosTotal field carries the full-pool DISTINCT
+ *     tikintag denominator (PRD baseline 235) for the "X / Y" caption UX.
  *
  * Design rules (deliberate, mirror of `bonos.ts:9-22`):
  *   - NO imports from `next/`, `react`, `server-only`, or `lib/sheets/`.
- *     Every function is callable from Server Components, Client
- *     Components, scripts, and (future) tests without setup.
- *   - All functions are pure: same input → same output, no side effects,
- *     no `Date.now()` or `process.env` reads.
- *   - Bogotá is UTC-5 with no DST. Date arithmetic is anchored to the
- *     Bogotá calendar — agreeing with `url-state.ts` and `bonos.ts` on
- *     what "a day" / "a week" means.
- *   - Inline `startOfDayBogotaTimestamp` / `endOfDayBogotaTimestamp`
- *     verbatim from `bonos.ts:53-74`. DRY across domain modules costs
- *     more than the inline ~22 lines (Plan 03-02 precedent).
- *   - Empty-input safe across all aggregators. No NaN / Infinity / divide-
- *     by-zero leaking into KPI cards or charts.
+ *   - All functions are pure: same input → same output, no side effects.
+ *   - Bogotá is UTC-5 with no DST. Date arithmetic anchored to Bogotá.
+ *   - Empty-input safe across all aggregators.
  */
 
 import { formatInTimeZone } from "date-fns-tz";
@@ -88,50 +84,142 @@ function endOfDayBogotaTimestamp(s: string | undefined): number {
   return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
 }
 
+// --- Direction classification (Plan 10-04 fix — TIPO-BASED platform-flow lens)
+
+/**
+ * Tipos that ARE platform inflows when present. PAYIN_PSE / PAYIN_TRANSFER
+ * are recargas — money entering the Tikin platform from the user's bank.
+ * Each event = exactly 1 row in BD_Plataforma (direction='in').
+ */
+const PLATFORM_IN_TIPOS: ReadonlySet<TransactionType> = new Set([
+  "PAYIN_PSE",
+  "PAYIN_TRANSFER",
+]);
+
+/**
+ * Tipos that ARE platform outflows when present, and produce TWO rows per
+ * event in BD_Plataforma (sender OUT + receiver IN, same monto magnitude).
+ * Counted ONCE on the OUT side — the IN-side mirror is an intra-platform
+ * counterpart, not a fresh inflow. Verified pattern (cardUsage.ts:5-12 +
+ * bonos v2 contract).
+ */
+const PLATFORM_OUT_TIPOS_BIDIRECTIONAL: ReadonlySet<TransactionType> = new Set([
+  "BONUS",
+  "P2P",
+  "PURCHASE",
+]);
+
+/**
+ * Tipos that ARE platform outflows when present, single-row per event.
+ * PAYOUT_BANK = retiro a banco (money leaving the platform to a bank).
+ */
+const PLATFORM_OUT_TIPOS_SINGLEDIR: ReadonlySet<TransactionType> = new Set([
+  "PAYOUT_BANK",
+]);
+
+/**
+ * `true` for rows that represent platform inflows (recargas). Each event
+ * is exactly one row, so no double-counting concern at the row level.
+ */
+function isPlatformInRow(t: Transaction): boolean {
+  return PLATFORM_IN_TIPOS.has(t.tipo);
+}
+
+/**
+ * `true` for rows that represent the canonical OUT side of a platform
+ * outflow event. For bidirectional types (BONUS / P2P / PURCHASE) we
+ * require `direction === 'out'` so each event counts once. For
+ * single-direction OUT types (PAYOUT_BANK), the row is its own canonical
+ * representative.
+ */
+function isPlatformOutRow(t: Transaction): boolean {
+  if (PLATFORM_OUT_TIPOS_SINGLEDIR.has(t.tipo)) return true;
+  if (PLATFORM_OUT_TIPOS_BIDIRECTIONAL.has(t.tipo)) return t.direction === "out";
+  return false;
+}
+
+/**
+ * `true` for rows that represent the canonical event row — i.e. either the
+ * inflow row or the OUT side of an outflow. The IN-side mirror of
+ * bidirectional outflows + any non-platform-flow row (FEE / REFUND /
+ * CREDIT_ADJUSTMENT / TREASURY / UKNOWN / OTRO) is excluded so that
+ * counters / shares / status ratios are computed over EVENTS, not rows.
+ *
+ * Non-classified types (FEE, REFUND, CREDIT_ADJUSTMENT, TREASURY, UKNOWN,
+ * OTRO) are NOT counted as canonical events — they're operational
+ * artifacts, not user-flow events. They appear in row-level pass-throughs
+ * (the donut "Otros" bucket if their count is large enough) but don't
+ * inflate the volumen / status / users headline.
+ */
+function isCanonicalEventRow(t: Transaction): boolean {
+  return isPlatformInRow(t) || isPlatformOutRow(t);
+}
+
 // --- v2 Output types --------------------------------------------------------
 
 /**
  * v2 headline KPIs for /inicio (INI-V2-01 + INI-V2-02).
  *
- * Computed over a state-UNFILTERED universe so `successRate` denominator =
- * total attempted (completed + rejected + any future OTRO_STATUS); see
- * `summarizePayoutsByState.total` convention from `payouts.ts:557` —
- * defensive against future state additions.
+ * Plan 10-04 fix: counters are now over CANONICAL EVENT rows
+ * (`isCanonicalEventRow`) — bidirectional types (BONUS / P2P / PURCHASE)
+ * count once on their OUT side. Volumen splits use TIPO-based
+ * classification: IN ≡ PAYIN_*, OUT ≡ PAYOUT_BANK + bidirectional-OUT.
  *
- * Baseline (REQUIREMENTS.md INI-V2-02): 98.1% completed / 1.6% rejected /
- * 0.2% in_progress over the BD_Plataforma full universe — semáforo verde.
+ * Volumen sums are restricted to `status === 'completed'` — rejected
+ * transactions did not move money, and the headline KPI should answer
+ * "how much money actually flowed" not "how much was attempted."
  */
 export interface InicioSummaryV2 {
-  /** DISTINCT tikintag count across the input rows (INI-V2-01). */
+  /**
+   * DISTINCT tikintag count across the FILTERED input rows (period +
+   * empresa scope) — answers "¿cuántos tikintags estuvieron activos en el
+   * período mostrado?". Counted over ALL rows in the filtered scope (any
+   * direction, any status, any tipo) — a user appearing in a rejected row
+   * still counts as "active".
+   */
   usuariosActivos: number;
-  /** Sum of `monto` across rows where `direction === 'in'` (INI-V2-01). */
+  /**
+   * DISTINCT tikintag count across the FULL transaction pool (NO period /
+   * empresa filter; only direction!=='OTRO_DIRECTION' and a non-empty
+   * tikintag). Mirrors `aggregateRechargeAdoption.totalUsers` — the
+   * "alcance histórico" denominator. PRD baseline reading: 235 distinct
+   * tikintags over the full BD_Plataforma universe.
+   *
+   * Surfaced so the leaf KPI can render an "X / Y usuarios totales"
+   * caption — the gap between the two reveals reactivation opportunity.
+   */
+  usuariosTotal: number;
+  /**
+   * Sum of `Math.abs(monto)` across rows where `isPlatformInRow(t)` AND
+   * `status === 'completed'` (INI-V2-01). I.e. recargas only.
+   */
   volumenIn: number;
   /**
-   * Sum of `Math.abs(monto)` across rows where `direction === 'out'`.
-   * BD_Plataforma stores PURCHASE / PAYOUT / out-bound montos as negatives;
-   * `Math.abs` matches the `summarizePurchases` convention at
-   * `cardUsage.ts:213` (gross spend, not net).
+   * Sum of `Math.abs(monto)` across rows where `isPlatformOutRow(t)` AND
+   * `status === 'completed'` — i.e. PAYOUT_BANK + (BONUS/P2P/PURCHASE on
+   * the OUT side).
    */
   volumenOut: number;
-  /** Count of `status === 'completed'` rows (INI-V2-02 numerator). */
+  /**
+   * Count of CANONICAL EVENT rows with `status === 'completed'`.
+   * Numerator for `successRate`. Each bidirectional event counts once.
+   */
   countCompleted: number;
   /**
-   * Count of `status === 'rejected'` rows. BD_Plataforma uses `rejected`
-   * for failures (see `types.ts:63`); surfaced as `countFailed` in v2 for
-   * UX clarity — the headline KPI label reads "fallidas" not "rechazadas".
+   * Count of CANONICAL EVENT rows with `status === 'rejected'`.
+   * BD_Plataforma uses `rejected` for failures; the v2 KPI label reads
+   * "fallidas" for clarity.
    */
   countFailed: number;
   /**
-   * Count of `status === 'OTRO_STATUS'` rows — defensive: any future
-   * pending-like state captured live falls here. Currently 0 in
+   * Count of CANONICAL EVENT rows with `status === 'OTRO_STATUS'` —
+   * defensive for any future pending-like state. Currently 0 in
    * production (Phase 2 schema only sees `completed` + `rejected`).
    */
   countInProgress: number;
   /**
-   * `rows.length` — denominator for successRate. Mirrors
-   * `summarizePayoutsByState.total = payouts.length` (payouts.ts:557): if
-   * a future state lands the three named counters underrepresent, but the
-   * total stays correct.
+   * Total CANONICAL EVENT rows = countCompleted + countFailed +
+   * countInProgress. Denominator for `successRate`.
    */
   total: number;
   /** `countCompleted / total`; zero-safe `0` when total === 0. */
@@ -149,7 +237,7 @@ export interface InicioSummaryV2 {
 export interface TransactionTypeBucket {
   /** Either a literal `TransactionType` value OR `"Otros"` for the rolled-up tail. */
   tipo: string;
-  /** Count of rows in this bucket. */
+  /** Count of rows in this bucket — each platform event counted once. */
   count: number;
   /** `count / total` (0..1); zero-safe `0` when total === 0. */
   share: number;
@@ -160,32 +248,24 @@ export interface TransactionTypeBucket {
 /**
  * Apply the Inicio v2 default filter contract to a list of transactions.
  *
- * Filter semantics (mirror of `filterPayoutsV2` at `payouts.ts:508-532` —
- * the established v2-CSV-status pattern):
+ * Filter semantics (mirror of `filterPayoutsV2` at `payouts.ts:508-532`):
  *   1. Status: state-UNFILTERED by default (BOTH `completed` and
- *      `rejected` flow through so `summarizeInicioV2` can compute
- *      `successRate` from a single input). When `filters.status` is
- *      non-empty (CSV multi-select per CROSS-V2-01): narrow to that Set.
- *   2. Tipo: when `filters.tipo` is non-empty (CSV multi-select per
- *      CROSS-V2-02): narrow to that Set. INI-V2-04 — the donut-by-tipo
- *      is over the FULL type universe by default; the URL filter narrows
- *      everything if present.
- *   3. Bogotá-anchored from/to (inclusive ends) — uses local helpers
- *      `startOfDayBogotaTimestamp` / `endOfDayBogotaTimestamp`.
- *   4. Optional `empresa` filter (cliente-foco): when set, keep only
- *      rows where `t.empresa_id === filters.empresa`.
- *   5. Direction: BOTH `in` and `out` allowed (the cross-cut answer to
- *      "platform-wide health"). Skip ONLY `direction === 'OTRO_DIRECTION'`
- *      defensively — keeps the IN/OUT split sums clean if a future Sheet
- *      edit introduces a third value.
+ *      `rejected` flow through). When `filters.status` is non-empty (CSV
+ *      multi-select per CROSS-V2-01): narrow to that Set.
+ *   2. Tipo: when `filters.tipo` is non-empty: narrow to that Set.
+ *   3. Bogotá-anchored from/to (inclusive ends).
+ *   4. Optional `empresa` filter — keep only rows where
+ *      `t.empresa_id === filters.empresa`.
+ *   5. Direction: BOTH `in` and `out` allowed. Skip ONLY
+ *      `direction === 'OTRO_DIRECTION'` defensively.
  *
  * Pure: returns a new array; does not mutate `transactions`.
  *
  * Cross-cut nature (vs siblings): /inicio v2 is the one tab where ALL
- * tipos AND BOTH directions are in scope by default (it's the "operative
- * health" page — operators want to see PURCHASE-out alongside BONUS-in
- * alongside PAYOUT_BANK-out etc.). Other v2 tabs hard-pin their tipo
- * (BONUS / PURCHASE / PAYIN_*) — this one does not.
+ * tipos AND BOTH directions are in scope by default. Downstream
+ * aggregations classify rows into IN / OUT / canonical-event using the
+ * TIPO-based helpers above — the filter is INTENTIONALLY broad to keep
+ * a single filter pass feeding all four aggregations.
  */
 export function filterInicioV2(
   transactions: Transaction[],
@@ -222,60 +302,76 @@ export function filterInicioV2(
 // --- v2 KPI summary ---------------------------------------------------------
 
 /**
- * Compute the v2 Inicio headline KPIs from an already-filtered list
- * (INI-V2-01 + INI-V2-02).
+ * Compute the v2 Inicio headline KPIs from the FILTERED list and the FULL
+ * transaction pool (INI-V2-01 + INI-V2-02).
  *
- * Single-pass reduce — no intermediate arrays. For each row:
- *   - Increment IN/OUT volumen per `direction` (out montos taken absolute
- *     so the headline volumen is gross-flow, not net).
- *   - Increment status counter (`countCompleted` / `countFailed` /
- *     `countInProgress`) per `status`.
- *   - Add `tikintag` to a Set for `usuariosActivos` distinct count.
+ * Plan 10-04 fix:
+ *   - Two-input signature: `filteredRows` for the period-scoped counters
+ *     and `allTx` for the full-pool denominator (`usuariosTotal`).
+ *   - Counters are over CANONICAL EVENT rows — bidirectional types
+ *     (BONUS / P2P / PURCHASE) count once on the OUT side.
+ *   - Volumen sums restricted to `status === 'completed'` (rejected ≠
+ *     moved money).
+ *   - `volumenIn` = sum `Math.abs(monto)` over `isPlatformInRow` AND
+ *     `status='completed'`. PAYIN_* in BD_Plataforma are positive monto in
+ *     practice; `Math.abs` is defensive consistency with the OUT side.
+ *   - `volumenOut` = sum `Math.abs(monto)` over `isPlatformOutRow` AND
+ *     `status='completed'`. BD_Plataforma stores OUT montos as negative;
+ *     `Math.abs` recovers the gross value.
  *
- * Pure. Empty input → all zeros, `successRate: 0` (no NaN / Infinity).
+ * Single-pass reduce over `filteredRows`; second short loop over `allTx`
+ * for the full-pool tikintag count.
  *
- * Baseline (PRD v2 INI-V2-02): 98.1% / 1.6% / 0.2% — semáforo verde over
- * the global universe; per-period readings vary with the URL filter.
- *
- * @example
- *   summarizeInicioV2([
- *     { direction: 'in',  status: 'completed', monto:  100000, tikintag: '$a', ... },
- *     { direction: 'out', status: 'completed', monto: -50000,  tikintag: '$b', ... },
- *     { direction: 'in',  status: 'rejected',  monto:  25000,  tikintag: '$a', ... },
- *   ])
- *   // → { usuariosActivos: 2, volumenIn: 125000, volumenOut: 50000,
- *   //     countCompleted: 2, countFailed: 1, countInProgress: 0,
- *   //     total: 3, successRate: 0.667 }
+ * Pure. Empty inputs → all zeros, `successRate: 0`.
  */
 export function summarizeInicioV2(
-  transactions: Transaction[],
+  filteredRows: Transaction[],
+  allTx: Transaction[],
 ): InicioSummaryV2 {
   let volumenIn = 0;
   let volumenOut = 0;
   let countCompleted = 0;
   let countFailed = 0;
   let countInProgress = 0;
-  const tikintagSet = new Set<string>();
+  const filteredTikintagSet = new Set<string>();
 
-  for (const t of transactions) {
-    if (t.direction === "in") {
-      volumenIn += t.monto;
-    } else if (t.direction === "out") {
-      volumenOut += Math.abs(t.monto);
-    }
+  for (const t of filteredRows) {
+    if (t.tikintag) filteredTikintagSet.add(t.tikintag);
+
+    // Status counters + total — over canonical event rows only, so each
+    // bidirectional event contributes exactly one (the OUT side).
+    if (!isCanonicalEventRow(t)) continue;
 
     if (t.status === "completed") countCompleted += 1;
     else if (t.status === "rejected") countFailed += 1;
     else if (t.status === "OTRO_STATUS") countInProgress += 1;
 
-    if (t.tikintag) tikintagSet.add(t.tikintag);
+    // Volumen — restricted to completed (rejected ≠ money moved).
+    if (t.status === "completed") {
+      if (isPlatformInRow(t)) {
+        volumenIn += Math.abs(t.monto);
+      } else if (isPlatformOutRow(t)) {
+        volumenOut += Math.abs(t.monto);
+      }
+    }
   }
 
-  const total = transactions.length;
+  const total = countCompleted + countFailed + countInProgress;
   const successRate = total > 0 ? countCompleted / total : 0;
 
+  // Full-pool denominator — the "alcance histórico" 235 baseline.
+  // We exclude OTRO_DIRECTION rows here too (mirror filterInicioV2's
+  // defensive guard) so the denominator stays consistent with the rest of
+  // the v2 surface; in practice BD_Plataforma has no OTRO_DIRECTION rows.
+  const totalTikintagSet = new Set<string>();
+  for (const t of allTx) {
+    if (t.direction === "OTRO_DIRECTION") continue;
+    if (t.tikintag) totalTikintagSet.add(t.tikintag);
+  }
+
   return {
-    usuariosActivos: tikintagSet.size,
+    usuariosActivos: filteredTikintagSet.size,
+    usuariosTotal: totalTikintagSet.size,
     volumenIn,
     volumenOut,
     countCompleted,
@@ -292,58 +388,54 @@ export function summarizeInicioV2(
  * Group an already-filtered list by `tipo` and return a top-N + "Otros"
  * rollup distribution (INI-V2-03 + INI-V2-04).
  *
+ * Plan 10-04 fix: counts each EVENT once. For bidirectional types
+ * (BONUS / P2P / PURCHASE) only the OUT side contributes; for IN types
+ * (PAYIN_*) and single-direction OUT (PAYOUT_BANK) the row is its own
+ * representative. Non-classified types (FEE / REFUND / CREDIT_ADJUSTMENT
+ * / TREASURY / UKNOWN / OTRO) flow through with their natural row count.
+ *
  * Algorithm:
- *   1. Group rows by `tipo` into a count Map.
- *   2. Sort groups DESC by count (ties broken by `tipo` lexicographic ASC
- *      for determinism across renders).
- *   3. If `groups.length <= n`: return all groups (no "Otros" bucket).
- *   4. Else: top-N kept verbatim, remaining tail rolled up as a single
- *      `{ tipo: "Otros", count: sum, share: ... }` bucket (mirror of the
- *      `aggregateTopBancos` Otros-rollup pattern from `payouts.ts`).
- *   5. Each bucket's `share = count / total`, where `total = transactions.length`
- *      (the denominator is the FULL filtered input, not the visible-N
- *      slice — so visible shares always sum to ≤ 1.0 and the Otros share
- *      makes them sum to exactly 1.0).
+ *   1. Iterate filtered rows; per row, decide whether it's COUNTABLE:
+ *        - canonical event row → count (1 per event by definition above)
+ *        - non-classified type → count (1 per row; these have no
+ *          bidirectional pattern, so 1 row = 1 event)
+ *        - IN-side mirror of bidirectional event (BONUS-in / P2P-in /
+ *          PURCHASE-in) → SKIP (already counted on the OUT side)
+ *   2. Group countable rows by `tipo` into a count Map.
+ *   3. Sort groups DESC by count (ties broken by `tipo` lexicographic
+ *      ASC for determinism across renders).
+ *   4. If `groups.length <= n`: return all groups (no "Otros" bucket).
+ *   5. Else: top-N kept verbatim, remaining tail rolled up as a single
+ *      `{ tipo: "Otros", count: sum, share: ... }` bucket.
+ *   6. Each bucket's `share = count / total` over countable rows.
  *
- * Empty input → `[]` (no point emitting an "Otros: 0" placeholder).
+ * Empty input → `[]`.
  *
- * Sorting in the final output: DESC by count keeps the ranking
- * deterministic; the Otros bucket — when present — naturally sits at the
- * tail because top-N already ranked higher; ties broken by `tipo`
- * lexicographic ASC.
- *
- * Baseline (PRD v2 INI-V2-03 — donut over completed-in BD_Plataforma):
- *   PAYIN_PSE / PAYIN_TRANSFER / BONUS / P2P / PAYOUT_BANK / PURCHASE +
- *   Otros tail (CREDIT_ADJUSTMENT, FEE, REFUND, TREASURY, UKNOWN, OTRO).
- *   Default n=6 picks up the 6 most frequent tipos in production.
- *
- * Pure. Returns a new array; does not mutate input.
- *
- * @example
- *   aggregateTransactionTypeDistribution([
- *     { tipo: 'BONUS', ... }, { tipo: 'BONUS', ... }, { tipo: 'P2P', ... },
- *     { tipo: 'FEE', ... }, { tipo: 'REFUND', ... }, { tipo: 'TREASURY', ... },
- *     { tipo: 'UKNOWN', ... },
- *   ], 3)
- *   // → [
- *   //   { tipo: 'BONUS', count: 2, share: 0.286 },
- *   //   { tipo: 'FEE',   count: 1, share: 0.143 },
- *   //   { tipo: 'P2P',   count: 1, share: 0.143 },
- *   //   { tipo: 'Otros', count: 3, share: 0.429 },  // REFUND + TREASURY + UKNOWN
- *   // ]
+ * Pure.
  */
 export function aggregateTransactionTypeDistribution(
   transactions: Transaction[],
   n = 6,
 ): TransactionTypeBucket[] {
-  const total = transactions.length;
-  if (total === 0) return [];
+  if (transactions.length === 0) return [];
 
-  // Group by tipo
+  // Group by tipo, but skip the IN-side mirror of bidirectional events
+  // (those would double-count on top of their canonical OUT row).
   const counts = new Map<TransactionType, number>();
+  let total = 0;
   for (const t of transactions) {
+    if (
+      PLATFORM_OUT_TIPOS_BIDIRECTIONAL.has(t.tipo) &&
+      t.direction !== "out"
+    ) {
+      // BONUS-in / P2P-in / PURCHASE-in — same event as a corresponding
+      // OUT row that we'll count instead. Skip.
+      continue;
+    }
     counts.set(t.tipo, (counts.get(t.tipo) ?? 0) + 1);
+    total += 1;
   }
+  if (total === 0) return [];
 
   // Sort groups DESC by count; ties broken by tipo lexicographic ASC.
   const sorted = Array.from(counts.entries()).sort((a, b) =>
@@ -376,15 +468,19 @@ export function aggregateTransactionTypeDistribution(
   return buckets;
 }
 
-// --- v2 Activity time series (distinct tikintag + signed volumen) -----------
+// --- v2 Activity time series (distinct tikintag + IN/OUT volumen) ----------
 
 /**
  * One point on the v2 activity time series chart (INI-V2-05).
  *
- * Daily and weekly variants share this shape. The v2 chart renders BOTH
- * series over the same x-axis (a single line for `usuariosActivos`, an
- * area / dashed companion for `volumen`) so a single output type carries
- * both streams.
+ * Plan 10-04 fix: replaced single signed `volumen` with split
+ * `volumenIn` + `volumenOut` (both positive sums of `Math.abs(monto)`,
+ * restricted to `status === 'completed'` per the same rule as
+ * `summarizeInicioV2`).
+ *
+ * Daily and weekly variants share this shape. The v2 chart renders
+ * `usuariosActivos` (left axis, integer) and the two volumen series
+ * (right axis, COP) over the same x-axis.
  */
 export interface ActivityPointV2 {
   /** `YYYY-MM-DD` for daily granularity, `RRRR-Www` for weekly. */
@@ -392,73 +488,77 @@ export interface ActivityPointV2 {
   /**
    * DISTINCT tikintag count in this bucket (a single tikintag with N
    * transactions in one day/week counts as 1 active user, NOT N).
-   * Set-per-bucket dedup convention.
+   * Counted over ALL filtered rows in the bucket (any direction, any
+   * status, any tipo) — same liberal definition as `usuariosActivos` on
+   * the headline KPI.
    */
   usuariosActivos: number;
   /**
-   * Signed sum of `monto` across the bucket's rows (positives + negatives).
-   * The operator-relevant question is "what's the net flow today?"; the
-   * v2 page renders this as a single line, NOT a per-direction split
-   * (the IN/OUT split lives in the headline KPIs from `summarizeInicioV2`).
-   * Negative values are valid (a day where outflows exceeded inflows).
+   * Sum of `Math.abs(monto)` over rows where `isPlatformInRow(t)` AND
+   * `status === 'completed'` (recargas — PAYIN_*).
    */
-  volumen: number;
+  volumenIn: number;
+  /**
+   * Sum of `Math.abs(monto)` over rows where `isPlatformOutRow(t)` AND
+   * `status === 'completed'` (PAYOUT_BANK + BONUS/P2P/PURCHASE on the
+   * OUT side).
+   */
+  volumenOut: number;
 }
 
 /**
  * Group transactions by Bogotá calendar date and emit one point per
- * non-empty bucket, with distinct-tikintag count + signed volumen sum
- * (INI-V2-05 daily granularity).
+ * non-empty bucket (INI-V2-05 daily granularity).
  *
- * Set-per-bucket dedup: a tikintag with multiple transactions in one day
- * counts as 1 active user (Pitfall 11) — keyed by `tikintag`.
- *
- * Volumen is the signed sum (no `Math.abs`): the v2 chart line answers
- * "what's the net flow that day?", not "how much money moved through?".
+ * Plan 10-04 fix: emits split `volumenIn` + `volumenOut` per bucket
+ * (each `Math.abs(monto)` over completed canonical rows of the
+ * respective direction). Same Set-per-bucket dedup for tikintags.
  *
  * NO zero-fill — Recharts continuous-axis spacing handles missing days.
  *
  * Output sorted ASCENDING by `bucket` (string-sortable since
  * `YYYY-MM-DD` is lexicographically chronological). Empty input → `[]`.
  *
- * Pure: returns a new array; does not mutate input.
+ * Pure.
  */
 export function aggregateActivityByDateV2(
   transactions: Transaction[],
 ): ActivityPointV2[] {
   const byBucket = new Map<
     string,
-    { tikintags: Set<string>; volumen: number }
+    { tikintags: Set<string>; volumenIn: number; volumenOut: number }
   >();
   for (const t of transactions) {
     const bucket = formatInTimeZone(t.fecha, BOGOTA_TZ, "yyyy-MM-dd");
     let acc = byBucket.get(bucket);
     if (!acc) {
-      acc = { tikintags: new Set<string>(), volumen: 0 };
+      acc = { tikintags: new Set<string>(), volumenIn: 0, volumenOut: 0 };
       byBucket.set(bucket, acc);
     }
     if (t.tikintag) acc.tikintags.add(t.tikintag);
-    acc.volumen += t.monto;
+    if (t.status === "completed") {
+      if (isPlatformInRow(t)) acc.volumenIn += Math.abs(t.monto);
+      else if (isPlatformOutRow(t)) acc.volumenOut += Math.abs(t.monto);
+    }
   }
   return Array.from(byBucket, ([bucket, acc]) => ({
     bucket,
     usuariosActivos: acc.tikintags.size,
-    volumen: acc.volumen,
+    volumenIn: acc.volumenIn,
+    volumenOut: acc.volumenOut,
   })).sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0));
 }
 
 /**
  * ISO-week variant of `aggregateActivityByDateV2` (INI-V2-05 weekly
- * granularity). Same Set-per-bucket dedup contract — Pitfall 11 closed
- * at week granularity too.
+ * granularity).
  *
  * Bucket format `RRRR-'W'II` (e.g. `2026-W18`). Using `RRRR` (ISO
  * week-numbering year) instead of `yyyy` (calendar year) avoids
  * mis-bucketing ~5 days per year (e.g. 2024-12-30 / 2024-12-31 are in
  * 2025-W01).
  *
- * NO zero-fill. Sorted ASCENDING by `bucket` (string-sortable since
- * `RRRR-Www` is lexicographically chronological). Empty input → `[]`.
+ * NO zero-fill. Sorted ASCENDING by `bucket`. Empty input → `[]`.
  *
  * Pure.
  */
@@ -467,22 +567,26 @@ export function aggregateActivityByWeekV2(
 ): ActivityPointV2[] {
   const byBucket = new Map<
     string,
-    { tikintags: Set<string>; volumen: number }
+    { tikintags: Set<string>; volumenIn: number; volumenOut: number }
   >();
   for (const t of transactions) {
     const bucket = formatInTimeZone(t.fecha, BOGOTA_TZ, "RRRR-'W'II");
     let acc = byBucket.get(bucket);
     if (!acc) {
-      acc = { tikintags: new Set<string>(), volumen: 0 };
+      acc = { tikintags: new Set<string>(), volumenIn: 0, volumenOut: 0 };
       byBucket.set(bucket, acc);
     }
     if (t.tikintag) acc.tikintags.add(t.tikintag);
-    acc.volumen += t.monto;
+    if (t.status === "completed") {
+      if (isPlatformInRow(t)) acc.volumenIn += Math.abs(t.monto);
+      else if (isPlatformOutRow(t)) acc.volumenOut += Math.abs(t.monto);
+    }
   }
   return Array.from(byBucket, ([bucket, acc]) => ({
     bucket,
     usuariosActivos: acc.tikintags.size,
-    volumen: acc.volumen,
+    volumenIn: acc.volumenIn,
+    volumenOut: acc.volumenOut,
   })).sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0));
 }
 
@@ -491,90 +595,66 @@ export function aggregateActivityByWeekV2(
 /**
  * One row of the top-users-by-volume ranking (INI-V2-06).
  *
- * Grouped by `tikintag` (the user) NOT by `empresa_id`. This is the
- * explicit v1→v2 user-lens shift catalogued in STATE.md (Plan 08-04
- * — "tikintag is the canonical user identity at v2 ranking layer").
- * Joins the family of v2 user-lens rankings:
- *   - Bonos TopEmisores  / TopReceptores  (sourceTransferTikintag / dest...)
- *   - Uso Tarjeta TopCardUsers           (tikintag)
- *   - Recargas TopRechargers             (tikintag)
- *   - Inicio TopUsersByVolume            (tikintag) ← this one
+ * Plan 10-04 fix: ranking key is now `volumenOut` DESC (NOT `volumenNeto`)
+ * — the operative-lens framing answers "who moves the most money out of
+ * their Tikin wallet?" (purchases + payouts + bonos sent + p2p sent).
+ * Heavy spenders/movers surface at the top; the secondary `volumenIn`
+ * column shows their inflow context.
  *
- * The `empresa` column is shown as a denormalized label for table
- * display (the user's first observed `empresa_nombre`), NOT the
- * ranking key — same convention as `TopRecharger.empresa` in
- * `recargas.ts:371` and `TopCardUser.empresa` in `cardUsage.ts:124`.
+ * Grouped by `tikintag` (the user) NOT by `empresa_id` — same convention
+ * as TopRecharger / TopCardUser / TopEmisores / TopReceptores.
  */
 export interface TopUserVolumeRow {
   /** Ranking key: the user's tikintag. */
   tikintag: string;
   /**
    * Best-effort empresa label (first observed `empresa_nombre` for this
-   * tikintag). Today (Phase 2 default) `empresa_nombre === tikintag` so
-   * this field is always populated; type stays `string | undefined`
-   * defensively for the eventual schema evolution where empresa becomes
-   * a separate display column.
+   * tikintag).
    */
   empresa: string | undefined;
   /**
-   * Sum of `monto` across `direction === 'in'` rows for this tikintag
-   * (gross inflows; positives only by direction-sign convention).
+   * Sum of `Math.abs(monto)` across `isPlatformInRow(t)` rows for this
+   * tikintag (recargas — PAYIN_*). Restricted to `status === 'completed'`.
+   * Defensive `Math.abs` keeps the column positive even if a future
+   * schema drift introduces signed in-row montos.
    */
   volumenIn: number;
   /**
-   * Sum of `Math.abs(monto)` across `direction === 'out'` rows for this
-   * tikintag (gross outflows; abs because BD_Plataforma stores out
-   * montos as negative — same convention as `summarizePurchases` and
-   * `summarizeInicioV2.volumenOut`).
+   * Sum of `Math.abs(monto)` across `isPlatformOutRow(t)` rows for this
+   * tikintag (PAYOUT_BANK + BONUS/P2P/PURCHASE on the OUT side).
+   * Restricted to `status === 'completed'`. RANKING KEY for the table.
    */
   volumenOut: number;
   /**
-   * `volumenIn - volumenOut` — the RANKING KEY per INI-V2-06. The
-   * operator-relevant headline is "net activity": positive = net
-   * receiver (more inflow than outflow), negative = net spender. Both
-   * extremes are interesting at the top of a ranking; the v2 page can
-   * sort the table by abs(volumenNeto) at the leaf if it wants the
-   * "most active in either direction" framing, or keep DESC by signed
-   * neto for the "biggest net receivers" framing.
+   * Count of CANONICAL EVENT rows for this tikintag (any direction in the
+   * platform-flow lens — PAYIN_* + PAYOUT_BANK + bidirectional-OUT — and
+   * any status). Each event counts once.
    */
-  volumenNeto: number;
-  /** Count of rows for this tikintag (any direction, any status). */
   transacciones: number;
 }
 
 /**
- * Top-N tikintags ranked by `volumenNeto` DESC (INI-V2-06).
+ * Top-N tikintags ranked by `volumenOut` DESC (INI-V2-06).
  *
  * Algorithm:
  *   1. Group rows by `tikintag` into accumulator Map. Per group:
- *      - Sum `monto` per direction (`in` → volumenIn,
- *        `out` → volumenOut via `Math.abs`).
- *      - Increment `transacciones` on every row regardless of direction
- *        / status (this is the "how active is this user" headline,
- *        complementing the ranking key).
+ *      - For platform-IN rows with status='completed':
+ *        `volumenIn += Math.abs(monto)`.
+ *      - For platform-OUT rows with status='completed':
+ *        `volumenOut += Math.abs(monto)`.
+ *      - For canonical event rows (any status): increment `transacciones`.
  *      - Capture first-observed `empresa_nombre` (first-occurrence-wins).
- *   2. Compute `volumenNeto = volumenIn - volumenOut` per tikintag.
- *   3. Sort DESC by `volumenNeto`. Deterministic tiebreak: then DESC
- *      by `transacciones`, then `tikintag` lexicographic ASC.
- *   4. Slice to top `limit`.
+ *   2. Sort DESC by `volumenOut`. Deterministic tiebreak: then DESC by
+ *      `volumenIn` (between two equal-spenders, the bigger receiver wins);
+ *      then DESC by `transacciones`; then `tikintag` lexicographic ASC.
+ *   3. Slice to top `limit`.
  *
- * Rows where `tikintag` is empty/falsy are skipped — defensive: a
- * peer-less row cannot be attributed to a user.
+ * Rows where `tikintag` is empty/falsy are skipped — defensive.
+ * Rows that are NOT canonical event rows (IN-side mirror of bidirectional
+ * events, FEE / REFUND / CREDIT_ADJUSTMENT / TREASURY / UKNOWN / OTRO) are
+ * skipped — they're not the user's flow.
  *
- * Pure. Empty input → `[]`. O(n + k log k) where k = distinct tikintags.
- *
- * @example
- *   aggregateTopUsersByVolume([
- *     { tikintag: '$alice', direction: 'in',  monto:  100000, ... },
- *     { tikintag: '$alice', direction: 'out', monto: -25000,  ... },
- *     { tikintag: '$bob',   direction: 'in',  monto:  50000,  ... },
- *   ], 5)
- *   // → [
- *   //   { tikintag: '$alice', volumenIn: 100000, volumenOut: 25000,
- *   //     volumenNeto: 75000, transacciones: 2, empresa: '$alice' },
- *   //   { tikintag: '$bob',   volumenIn:  50000, volumenOut:     0,
- *   //     volumenNeto: 50000, transacciones: 1, empresa: '$bob'   },
- *   // ]
+ * Pure. Empty input → `[]`.
  */
 export function aggregateTopUsersByVolume(
   transactions: Transaction[],
@@ -583,6 +663,8 @@ export function aggregateTopUsersByVolume(
   const acc = new Map<string, TopUserVolumeRow>();
   for (const t of transactions) {
     if (!t.tikintag) continue;
+    if (!isCanonicalEventRow(t)) continue;
+
     let row = acc.get(t.tikintag);
     if (!row) {
       row = {
@@ -590,25 +672,24 @@ export function aggregateTopUsersByVolume(
         empresa: t.empresa_nombre || undefined,
         volumenIn: 0,
         volumenOut: 0,
-        volumenNeto: 0, // computed in second pass
         transacciones: 0,
       };
       acc.set(t.tikintag, row);
     }
-    if (t.direction === "in") {
-      row.volumenIn += t.monto;
-    } else if (t.direction === "out") {
-      row.volumenOut += Math.abs(t.monto);
-    }
     row.transacciones += 1;
+    if (t.status === "completed") {
+      if (isPlatformInRow(t)) {
+        row.volumenIn += Math.abs(t.monto);
+      } else if (isPlatformOutRow(t)) {
+        row.volumenOut += Math.abs(t.monto);
+      }
+    }
   }
 
   const ranked = Array.from(acc.values());
-  for (const row of ranked) {
-    row.volumenNeto = row.volumenIn - row.volumenOut;
-  }
   ranked.sort((a, b) => {
-    if (b.volumenNeto !== a.volumenNeto) return b.volumenNeto - a.volumenNeto;
+    if (b.volumenOut !== a.volumenOut) return b.volumenOut - a.volumenOut;
+    if (b.volumenIn !== a.volumenIn) return b.volumenIn - a.volumenIn;
     if (b.transacciones !== a.transacciones)
       return b.transacciones - a.transacciones;
     return a.tikintag < b.tikintag ? -1 : a.tikintag > b.tikintag ? 1 : 0;
