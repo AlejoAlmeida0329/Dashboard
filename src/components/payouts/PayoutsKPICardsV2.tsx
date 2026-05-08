@@ -42,6 +42,10 @@ type Props = {
   breakdown: PayoutStateBreakdown;
   montoTotalCompleted: number;
   thirdPartyCount: number;
+  /** Average payouts per distinct user with at least one attributable payout. */
+  avgPayoutsPerUser: number;
+  /** Distinct tikintags with ≥1 attributable payout (denominator of avg). */
+  uniqueUsers: number;
 };
 
 /**
@@ -61,9 +65,11 @@ export function PayoutsKPICardsV2({
   breakdown,
   montoTotalCompleted,
   thirdPartyCount,
+  avgPayoutsPerUser,
+  uniqueUsers,
 }: Props) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {/* 1. Tiempo promedio — PRIMARY */}
       <Card>
         <CardHeader>
@@ -138,6 +144,23 @@ export function PayoutsKPICardsV2({
         <CardContent>
           <p className="text-xs text-muted-foreground">
             Holder ≠ tikintag solicitante
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* 6. Promedio retiros por usuario */}
+      <Card>
+        <CardHeader>
+          <CardDescription>Retiros / usuario</CardDescription>
+          <CardTitle className="font-heading text-section-payouts text-3xl tabular-nums">
+            {uniqueUsers === 0 ? "—" : avgPayoutsPerUser.toFixed(1)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground">
+            {uniqueUsers === 0
+              ? "Sin usuarios atribuibles"
+              : `Sobre ${formatInteger(uniqueUsers)} usuarios`}
           </p>
         </CardContent>
       </Card>

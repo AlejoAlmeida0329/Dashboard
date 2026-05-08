@@ -176,6 +176,23 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
     joinedPeriod,
   );
 
+  // Average retiros per user — only counts payouts with an attributable
+  // tikintag (matched transaction in the JOIN). Payouts without a
+  // matched transaction (empty transaction_id upstream) don't contribute
+  // because we cannot count them against any user.
+  const usersWithPayouts = new Set<string>();
+  let attributablePayouts = 0;
+  for (const j of joinedPeriod) {
+    if (!j.transaction) continue;
+    const tag = j.transaction.tikintag;
+    if (!tag) continue;
+    usersWithPayouts.add(tag);
+    attributablePayouts += 1;
+  }
+  const uniqueUsers = usersWithPayouts.size;
+  const avgPayoutsPerUser =
+    uniqueUsers > 0 ? attributablePayouts / uniqueUsers : 0;
+
   // Empty-state branch: render the KPI header (with zeros) + a friendly
   // explanatory Card. Skip the diagnostic layer entirely — there's no
   // signal to mine. AgingAlert returns null in this path naturally.
@@ -187,6 +204,8 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
           breakdown={breakdown}
           montoTotalCompleted={montoTotalCompleted}
           thirdPartyCount={thirdParty.length}
+          avgPayoutsPerUser={avgPayoutsPerUser}
+          uniqueUsers={uniqueUsers}
         />
         <Card>
           <CardHeader>
@@ -212,6 +231,8 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
         breakdown={breakdown}
         montoTotalCompleted={montoTotalCompleted}
         thirdPartyCount={thirdParty.length}
+        avgPayoutsPerUser={avgPayoutsPerUser}
+        uniqueUsers={uniqueUsers}
       />
 
       {/* Aging alert — only when something's stuck. AgingAlert returns
