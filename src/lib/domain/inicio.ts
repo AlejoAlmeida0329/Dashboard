@@ -84,12 +84,20 @@ function endOfDayBogotaTimestamp(s: string | undefined): number {
   return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
 }
 
-// --- Direction classification (Plan 10-04 fix — TIPO-BASED platform-flow lens)
+// --- Direction classification (TIPO-BASED platform-flow lens)
+//
+// Two orthogonal questions about a row:
+//   1. Does it move money across the platform boundary? (IN/OUT volume)
+//   2. Is it a real user-flow event we should count? (success rate, donut)
+//
+// They diverge for BONUS and P2P: those are intra-platform mirrors —
+// money moves between users INSIDE the platform but never crosses the
+// platform boundary. They're real events (count for #2) but contribute
+// neither to platform IN nor OUT volume (skip for #1).
 
 /**
- * Tipos that ARE platform inflows when present. PAYIN_PSE / PAYIN_TRANSFER
- * are recargas — money entering the Tikin platform from the user's bank.
- * Each event = exactly 1 row in BD_Plataforma (direction='in').
+ * Tipos that move money INTO the platform from outside. PAYIN_PSE /
+ * PAYIN_TRANSFER = recargas. Each event = exactly 1 row (direction='in').
  */
 const PLATFORM_IN_TIPOS: ReadonlySet<TransactionType> = new Set([
   "PAYIN_PSE",
@@ -97,62 +105,77 @@ const PLATFORM_IN_TIPOS: ReadonlySet<TransactionType> = new Set([
 ]);
 
 /**
- * Tipos that ARE platform outflows when present, and produce TWO rows per
- * event in BD_Plataforma (sender OUT + receiver IN, same monto magnitude).
- * Counted ONCE on the OUT side — the IN-side mirror is an intra-platform
- * counterpart, not a fresh inflow. Verified pattern (cardUsage.ts:5-12 +
- * bonos v2 contract).
- */
-const PLATFORM_OUT_TIPOS_BIDIRECTIONAL: ReadonlySet<TransactionType> = new Set([
-  "BONUS",
-  "P2P",
-  "PURCHASE",
-]);
-
-/**
- * Tipos that ARE platform outflows when present, single-row per event.
- * PAYOUT_BANK = retiro a banco (money leaving the platform to a bank).
+ * Tipos that move money OUT of the platform across the boundary:
+ *   - PAYOUT_BANK: retiro a banco (single row, direction='out')
+ *   - PURCHASE: compra con tarjeta a comercio externo (bidirectional —
+ *     2 rows per event; OUT side is the cardholder, IN side mirror is
+ *     the empresa receiving the funds when the merchant is on Tikin).
+ * Counted ONCE per event (single-dir rows pass through; bidirectional
+ * requires direction='out').
  */
 const PLATFORM_OUT_TIPOS_SINGLEDIR: ReadonlySet<TransactionType> = new Set([
   "PAYOUT_BANK",
 ]);
+const PLATFORM_OUT_TIPOS_BIDIRECTIONAL: ReadonlySet<TransactionType> = new Set([
+  "PURCHASE",
+]);
 
 /**
- * `true` for rows that represent platform inflows (recargas). Each event
- * is exactly one row, so no double-counting concern at the row level.
+ * Tipos that emit TWO rows per event but DON'T cross the platform
+ * boundary — sender and receiver are both Tikin users. BONUS (premio
+ * empresa→empresa) and P2P (transferencia user→user) are real events but
+ * the money never leaves the platform. Counted once per event for
+ * success rate / donut, not counted for IN/OUT volume headline.
+ */
+const INTRA_PLATFORM_BIDIRECTIONAL_TIPOS: ReadonlySet<TransactionType> =
+  new Set(["BONUS", "P2P"]);
+
+/**
+ * Union of all tipos that emit 2 rows per event (used by the donut /
+ * status counters to de-dup the IN-side mirror).
+ */
+const BIDIRECTIONAL_EVENT_TIPOS: ReadonlySet<TransactionType> = new Set([
+  ...PLATFORM_OUT_TIPOS_BIDIRECTIONAL,
+  ...INTRA_PLATFORM_BIDIRECTIONAL_TIPOS,
+]);
+
+/**
+ * `true` for rows that contribute to platform-IN volume (recargas).
+ * Each event is exactly one row, so no double-counting concern.
  */
 function isPlatformInRow(t: Transaction): boolean {
   return PLATFORM_IN_TIPOS.has(t.tipo);
 }
 
 /**
- * `true` for rows that represent the canonical OUT side of a platform
- * outflow event. For bidirectional types (BONUS / P2P / PURCHASE) we
- * require `direction === 'out'` so each event counts once. For
- * single-direction OUT types (PAYOUT_BANK), the row is its own canonical
- * representative.
+ * `true` for rows that contribute to platform-OUT volume — money
+ * actually crossing the platform boundary outward. PAYOUT_BANK rows pass
+ * through; PURCHASE rows pass only on the OUT side. BONUS / P2P do NOT
+ * contribute (intra-platform mirrors, no boundary crossing).
  */
 function isPlatformOutRow(t: Transaction): boolean {
   if (PLATFORM_OUT_TIPOS_SINGLEDIR.has(t.tipo)) return true;
-  if (PLATFORM_OUT_TIPOS_BIDIRECTIONAL.has(t.tipo)) return t.direction === "out";
+  if (PLATFORM_OUT_TIPOS_BIDIRECTIONAL.has(t.tipo))
+    return t.direction === "out";
   return false;
 }
 
 /**
- * `true` for rows that represent the canonical event row — i.e. either the
- * inflow row or the OUT side of an outflow. The IN-side mirror of
- * bidirectional outflows + any non-platform-flow row (FEE / REFUND /
- * CREDIT_ADJUSTMENT / TREASURY / UKNOWN / OTRO) is excluded so that
- * counters / shares / status ratios are computed over EVENTS, not rows.
+ * `true` for rows that represent the canonical event row — i.e. either
+ * the inflow row, the OUT side of a platform outflow, OR the OUT side
+ * of an intra-platform bidirectional event (BONUS-out / P2P-out).
+ * Used by status counters and the donut so each EVENT counts once.
  *
- * Non-classified types (FEE, REFUND, CREDIT_ADJUSTMENT, TREASURY, UKNOWN,
- * OTRO) are NOT counted as canonical events — they're operational
- * artifacts, not user-flow events. They appear in row-level pass-throughs
- * (the donut "Otros" bucket if their count is large enough) but don't
- * inflate the volumen / status / users headline.
+ * Non-classified types (FEE / REFUND / CREDIT_ADJUSTMENT / TREASURY /
+ * UKNOWN / OTRO) are NOT canonical events — operational artifacts that
+ * shouldn't inflate user-facing counters.
  */
 function isCanonicalEventRow(t: Transaction): boolean {
-  return isPlatformInRow(t) || isPlatformOutRow(t);
+  if (isPlatformInRow(t)) return true;
+  if (isPlatformOutRow(t)) return true;
+  if (INTRA_PLATFORM_BIDIRECTIONAL_TIPOS.has(t.tipo))
+    return t.direction === "out";
+  return false;
 }
 
 // --- v2 Output types --------------------------------------------------------
@@ -196,8 +219,10 @@ export interface InicioSummaryV2 {
   volumenIn: number;
   /**
    * Sum of `Math.abs(monto)` across rows where `isPlatformOutRow(t)` AND
-   * `status === 'completed'` — i.e. PAYOUT_BANK + (BONUS/P2P/PURCHASE on
-   * the OUT side).
+   * `status === 'completed'` — i.e. money actually leaving the platform.
+   * Only PAYOUT_BANK (retiro a banco) + PURCHASE-out (compra tarjeta a
+   * comercio externo). BONUS / P2P are intra-platform mirrors and do NOT
+   * contribute (no boundary crossing).
    */
   volumenOut: number;
   /**
@@ -422,10 +447,7 @@ export function aggregateTransactionTypeDistribution(
   const counts = new Map<TransactionType, number>();
   let total = 0;
   for (const t of transactions) {
-    if (
-      PLATFORM_OUT_TIPOS_BIDIRECTIONAL.has(t.tipo) &&
-      t.direction !== "out"
-    ) {
+    if (BIDIRECTIONAL_EVENT_TIPOS.has(t.tipo) && t.direction !== "out") {
       // BONUS-in / P2P-in / PURCHASE-in — same event as a corresponding
       // OUT row that we'll count instead. Skip.
       continue;
