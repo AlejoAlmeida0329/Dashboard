@@ -65,14 +65,14 @@
 > - 🔍 **Uso Interno**: detectar patrones, anomalías, clientes de alto valor. Visibility = TODO visible (no presenter-hide).
 > - 🤝 **Reuniones con Clientes**: argumento de valor en tiempo real. Visibility = aplicar `presenter=1` para ocultar métricas internas (timeline crudo, anomalías).
 
-- [ ] **CLI-V2-01**: Selector de tikintag (dropdown de 235 usuarios — filtro principal de la sección)
-- [ ] **CLI-V2-02**: Tarjeta resumen del cliente — Balance · Primera tx · Última actividad · Total tx · Pocket activo (5 KPIs cabecera). **Visibility: todas visibles en presenter.**
-- [ ] **CLI-V2-03**: Retiros banco enriquecidos via JOIN con BD_Payouts (tabla detallada). **Visibility: visible en presenter — argumento de valor.**
-- [ ] **CLI-V2-04**: Bonos recibidos vs enviados del usuario (2 KPIs + monto). **Visibility: visibles.**
-- [ ] **CLI-V2-05**: Transferencias P2P enviadas/recibidas (NEW — 2 KPIs + tabla). **Visibility: visibles.**
-- [ ] **CLI-V2-06**: Compras con tarjeta del usuario (tabla + ticket promedio personal). **Visibility: visible.**
-- [ ] **CLI-V2-07**: Tiempo promedio de payouts del cliente vs benchmark plataforma (KPI comparativo). **Visibility: clave en presenter — argumento de eficiencia.**
-- [ ] **CLI-V2-08**: Timeline cronológico de toda la actividad del usuario (con ícono por tipo). **Visibility: presenter-hide en cliente-foco — uso interno; revela patrones que no se muestran a clientes.**
+- [x] **CLI-V2-01**: Selector de tikintag (dropdown de 235 usuarios — filtro principal de la sección)
+- [x] **CLI-V2-02**: Tarjeta resumen del cliente — Balance · Primera tx · Última actividad · Total tx · Pocket activo (5 KPIs cabecera). **Visibility: todas visibles en presenter.**
+- [x] **CLI-V2-03**: Retiros banco enriquecidos via JOIN con BD_Payouts (tabla detallada). **Visibility: visible en presenter — argumento de valor.**
+- [x] **CLI-V2-04**: Bonos recibidos vs enviados del usuario (2 KPIs + monto). **Visibility: visibles.**
+- [x] **CLI-V2-05**: Transferencias P2P enviadas/recibidas (NEW — 2 KPIs + tabla). **Visibility: visibles.**
+- [x] **CLI-V2-06**: Compras con tarjeta del usuario (tabla + ticket promedio personal). **Visibility: visible.**
+- [x] **CLI-V2-07**: Tiempo promedio de payouts del cliente vs benchmark plataforma (KPI comparativo). **Visibility: clave en presenter — argumento de eficiencia.**
+- [x] **CLI-V2-08**: Timeline cronológico de toda la actividad del usuario (con ícono por tipo). **Visibility: presenter-hide en cliente-foco — uso interno; revela patrones que no se muestran a clientes.**
 
 ### Recargas (refactored — extiende a PAYIN_TRANSFER + métricas PRD v2)
 
@@ -161,14 +161,14 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 | REC-V2-06   | Phase 8 | Complete |
 | REC-V2-07   | Phase 8 | Complete |
 | REC-V2-08   | Phase 8 | Complete |
-| CLI-V2-01   | Phase 9 | Pending |
-| CLI-V2-02   | Phase 9 | Pending |
-| CLI-V2-03   | Phase 9 | Pending |
-| CLI-V2-04   | Phase 9 | Pending |
-| CLI-V2-05   | Phase 9 | Pending |
-| CLI-V2-06   | Phase 9 | Pending |
-| CLI-V2-07   | Phase 9 | Pending |
-| CLI-V2-08   | Phase 9 | Pending |
+| CLI-V2-01   | Phase 9 | Complete |
+| CLI-V2-02   | Phase 9 | Complete |
+| CLI-V2-03   | Phase 9 | Complete |
+| CLI-V2-04   | Phase 9 | Complete |
+| CLI-V2-05   | Phase 9 | Complete |
+| CLI-V2-06   | Phase 9 | Complete |
+| CLI-V2-07   | Phase 9 | Complete |
+| CLI-V2-08   | Phase 9 | Complete |
 | INI-V2-01   | Phase 10 | Pending |
 | INI-V2-02   | Phase 10 | Pending |
 | INI-V2-03   | Phase 10 | Pending |
