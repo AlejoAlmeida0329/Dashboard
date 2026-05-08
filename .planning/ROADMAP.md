@@ -38,7 +38,7 @@ Detalle archivado en [.planning/milestones/v1.0-ROADMAP.md](./milestones/v1.0-RO
 - [x] **Phase 7: Bonos + Payouts (rebuilt)** — split source/destination en Bonos; eficiencia/banco/fallos/terceros en Payouts
 - [x] **Phase 8: Uso Tarjeta + Recargas** — pestaña nueva PURCHASE; Recargas extendida con PAYIN_TRANSFER
 - [x] **Phase 9: Vista Cliente (rebuilt)** — selector tikintag, 5 KPIs cabecera, JOIN enriquecido, P2P, tiempo vs benchmark, timeline cronológico (dual-purpose visibility)
-- [ ] **Phase 10: Inicio + Infrastructure** — home page agregada (operativo lens) + dominio propio (INFRA-04)
+- [ ] **Phase 10: Inicio + Infrastructure** — home page agregada (operativo lens); INFRA-04 (dominio propio) **deferido 2026-05-08 en Plan 10-03** — carry-forward al siguiente milestone
 
 ## Phase Details
 
@@ -125,7 +125,7 @@ Detalle archivado en [.planning/milestones/v1.0-ROADMAP.md](./milestones/v1.0-RO
 1. Inicio muestra **usuarios activos** (tikintags DISTINCT con ≥1 tx completed), **volumen IN vs OUT** separado, **tasa de éxito global** con semáforo (98.1%/1.6%/0.2% baseline)
 2. Inicio muestra **donut chart** por tipo de transacción (max 6 segmentos + "Otros") y **actividad temporal** (línea con granularidad día/semana/mes selectable)
 3. Inicio muestra **top 10 usuarios** por volumen en tabla rankeable
-4. Dashboard accesible en **dominio propio configurado** (e.g. `dashboard.tikin.co`) con SSL y env vars correctas; INFRA-04 cerrado
+4. ~~Dashboard accesible en **dominio propio configurado** (e.g. `dashboard.tikin.co`) con SSL y env vars correctas; INFRA-04 cerrado~~ — **DEFERIDO 2026-05-08 en Plan 10-03**: usuario optó por shipping de v2.0 sin custom domain. Cliente-foco UX continúa via `*.vercel.app` + Vercel SSO challenge. INFRA-04 carry-forward al siguiente milestone. Phase 10 cierra como ⚠️ Partial (criterios 1-3 son hitos del Inicio v2 que se cumplirán cuando Plan 10-02 ejecute; criterio 4 explícitamente deferido).
 
 **Research:** Likely
 **Research topics:** Vercel custom domain config (DNS records, SSL provisioning, scoping de env vars a Production+Preview); Vercel Deployment Protection bypass via custom domain
@@ -146,7 +146,8 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10. Phases 7 y 8 son in
 | 7. Bonos + Payouts | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 8. Uso Tarjeta + Recargas | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 9. Vista Cliente | v2.0 | 3/3 | ✅ Complete | 2026-05-08 |
-| 10. Inicio + Infrastructure | v2.0 | 1/3 | 🚧 In progress | — |
+| 10. Inicio + Infrastructure | v2.0 | 2/3 | 🚧 In progress (INFRA-04 deferred 2026-05-08 — see Plan 10-03 SUMMARY; awaits Plan 10-02 Inicio v2 page rewrite to close as ⚠️ Partial) | — |
 
 ---
 *Roadmap created: 2026-05-07 (v2.0 milestone kickoff)*
+*Last updated: 2026-05-08 — Plan 10-03 INFRA-04 deferral decision logged*

@@ -89,7 +89,7 @@
 
 ### Infrastructure
 
-- [ ] **INFRA-04**: Migración a dominio propio (e.g. `dashboard.tikin.co`) — carry-forward del v1.0; diferido en Plan 05-05/Phase 5; pendiente decisión del usuario sobre qué dominio usar
+- [ ] **INFRA-04**: Migración a dominio propio (e.g. `dashboard.tikin.co`) — carry-forward del v1.0; diferido en Plan 05-05/Phase 5. **Deferido nuevamente 2026-05-08 en Plan 10-03** — usuario optó por shipping de v2.0 sin custom domain ("lo del dominio lo hago despues"); cliente-foco UX continúa via `*.vercel.app` + Vercel SSO challenge hasta que un milestone futuro lo resucite. Carry-forward chain abierto.
 
 ## v2 Requirements (Deferred)
 
@@ -175,7 +175,7 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 | INI-V2-04   | Phase 10 | Pending |
 | INI-V2-05   | Phase 10 | Pending |
 | INI-V2-06   | Phase 10 | Pending |
-| INFRA-04    | Phase 10 | Pending |
+| INFRA-04    | Phase 10 | Pending (deferred 2026-05-08 in Plan 10-03 — user chose to ship v2.0 without custom domain; carry-forward to next milestone) |
 
 **Coverage:**
 - v1 requirements: 51 total
@@ -191,4 +191,4 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 
 ---
 *Requirements defined: 2026-05-07*
-*Last updated: 2026-05-07 after roadmap creation (traceability populated)*
+*Last updated: 2026-05-08 after Plan 10-03 INFRA-04 deferral decision*
