@@ -22,12 +22,12 @@
 
 ### Inicio (rebuilt — operativo lens)
 
-- [ ] **INI-V2-01**: Usuarios activos — tikintags DISTINCT con ≥1 tx completed en el período
-- [ ] **INI-V2-02**: Volumen total transaccionado, separado IN vs OUT
-- [ ] **INI-V2-03**: Tasa de éxito global (KPI + semáforo). Baseline data: 98.1% completed / 1.6% failed / 0.2% in_progress
-- [ ] **INI-V2-04**: Desglose por tipo de transacción (donut chart, max 6 segmentos + "Otros")
-- [ ] **INI-V2-05**: Actividad en el tiempo (línea con granularidad día/semana/mes selectable)
-- [ ] **INI-V2-06**: Top 10 usuarios por volumen (tabla rankeable)
+- [x] **INI-V2-01**: Usuarios activos — tikintags DISTINCT con ≥1 tx completed en el período
+- [x] **INI-V2-02**: Volumen total transaccionado, separado IN vs OUT
+- [x] **INI-V2-03**: Tasa de éxito global (KPI + semáforo). Baseline data: 98.1% completed / 1.6% failed / 0.2% in_progress
+- [x] **INI-V2-04**: Desglose por tipo de transacción (donut chart, max 6 segmentos + "Otros")
+- [x] **INI-V2-05**: Actividad en el tiempo (línea con granularidad día/semana/mes selectable)
+- [x] **INI-V2-06**: Top 10 usuarios por volumen (tabla rankeable)
 
 ### Bonos (rebuilt — split source/destination)
 
@@ -169,12 +169,12 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 | CLI-V2-06   | Phase 9 | Complete |
 | CLI-V2-07   | Phase 9 | Complete |
 | CLI-V2-08   | Phase 9 | Complete |
-| INI-V2-01   | Phase 10 | Pending |
-| INI-V2-02   | Phase 10 | Pending |
-| INI-V2-03   | Phase 10 | Pending |
-| INI-V2-04   | Phase 10 | Pending |
-| INI-V2-05   | Phase 10 | Pending |
-| INI-V2-06   | Phase 10 | Pending |
+| INI-V2-01   | Phase 10 | Complete |
+| INI-V2-02   | Phase 10 | Complete |
+| INI-V2-03   | Phase 10 | Complete |
+| INI-V2-04   | Phase 10 | Complete |
+| INI-V2-05   | Phase 10 | Complete |
+| INI-V2-06   | Phase 10 | Complete |
 | INFRA-04    | Phase 10 | Pending (deferred 2026-05-08 in Plan 10-03 — user chose to ship v2.0 without custom domain; carry-forward to next milestone) |
 
 **Coverage:**
@@ -191,4 +191,4 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 
 ---
 *Requirements defined: 2026-05-07*
-*Last updated: 2026-05-08 after Plan 10-03 INFRA-04 deferral decision*
+*Last updated: 2026-05-08 — Phase 10 closeout: INI-V2-01..06 Complete; INFRA-04 deferred carry-forward*

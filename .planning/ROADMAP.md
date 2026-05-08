@@ -38,7 +38,7 @@ Detalle archivado en [.planning/milestones/v1.0-ROADMAP.md](./milestones/v1.0-RO
 - [x] **Phase 7: Bonos + Payouts (rebuilt)** — split source/destination en Bonos; eficiencia/banco/fallos/terceros en Payouts
 - [x] **Phase 8: Uso Tarjeta + Recargas** — pestaña nueva PURCHASE; Recargas extendida con PAYIN_TRANSFER
 - [x] **Phase 9: Vista Cliente (rebuilt)** — selector tikintag, 5 KPIs cabecera, JOIN enriquecido, P2P, tiempo vs benchmark, timeline cronológico (dual-purpose visibility)
-- [ ] **Phase 10: Inicio + Infrastructure** — home page agregada (operativo lens); INFRA-04 (dominio propio) **deferido 2026-05-08 en Plan 10-03** — carry-forward al siguiente milestone
+- [⚠️] **Phase 10: Inicio + Infrastructure** — home page agregada (operativo lens) ✅; INFRA-04 (dominio propio) **deferido 2026-05-08 en Plan 10-03** — carry-forward al siguiente milestone
 
 ## Phase Details
 
@@ -146,8 +146,8 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10. Phases 7 y 8 son in
 | 7. Bonos + Payouts | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 8. Uso Tarjeta + Recargas | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 9. Vista Cliente | v2.0 | 3/3 | ✅ Complete | 2026-05-08 |
-| 10. Inicio + Infrastructure | v2.0 | 2/3 | 🚧 In progress (INFRA-04 deferred 2026-05-08 — see Plan 10-03 SUMMARY; awaits Plan 10-02 Inicio v2 page rewrite to close as ⚠️ Partial) | — |
+| 10. Inicio + Infrastructure | v2.0 | 3/3 | ⚠️ Partial (Inicio v2 ✅ shipped; INFRA-04 ⏸ deferred 2026-05-08 — carry-forward to next milestone, see Plan 10-03 SUMMARY) | 2026-05-08 |
 
 ---
 *Roadmap created: 2026-05-07 (v2.0 milestone kickoff)*
-*Last updated: 2026-05-08 — Plan 10-03 INFRA-04 deferral decision logged*
+*Last updated: 2026-05-08 — Phase 10 closed as ⚠️ Partial (Inicio v2 ✅ + INFRA-04 ⏸ deferred); v2.0 milestone declarable*
