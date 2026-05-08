@@ -69,8 +69,8 @@ import { AgingAlert } from "@/components/payouts/AgingAlert";
 import { FailureReasons } from "@/components/payouts/FailureReasons";
 import { PayoutsKPICardsV2 } from "@/components/payouts/PayoutsKPICardsV2";
 import { StatusBreakdownCards } from "@/components/payouts/StatusBreakdownCards";
-import { ThirdPartyPayouts } from "@/components/payouts/ThirdPartyPayouts";
 import { TopBancos } from "@/components/payouts/TopBancos";
+import { TopRetirosBanco } from "@/components/payouts/TopRetirosBanco";
 
 import { joinPayouts } from "@/lib/domain/join";
 import {
@@ -79,6 +79,7 @@ import {
   aggregateFailureReasons,
   aggregateThirdPartyPayouts,
   aggregateTopBancos,
+  aggregateTopRetirosBanco,
   filterPayoutsV2,
   summarizePayoutsByState,
 } from "@/lib/domain/payouts";
@@ -160,11 +161,14 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
   const topBancos = aggregateTopBancos(completed);
   const montoTotalCompleted = completed.reduce((s, p) => s + p.monto, 0);
 
-  // Third-party requires the JOIN. We join completed payouts only —
-  // settled bank transfers — per PAY-V2-08 KPI semantics. One JOIN per
-  // request budget contract; chained into the aggregation below.
+  // Third-party detection (still feeds the KPI count) joins completed
+  // payouts only per PAY-V2-08 KPI semantics. The top-retiros ranking
+  // joins the full periodOnly universe (any state) so a user with many
+  // failed retiros surfaces in the ranking.
   const joinedCompleted = joinPayouts(txResult.rows, completed);
   const thirdParty = aggregateThirdPartyPayouts(joinedCompleted);
+  const joinedPeriod = joinPayouts(txResult.rows, periodOnly);
+  const topRetiros = aggregateTopRetirosBanco(joinedPeriod, 20);
 
   // Empty-state branch: render the KPI header (with zeros) + a friendly
   // explanatory Card. Skip the diagnostic layer entirely — there's no
@@ -211,12 +215,10 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
       {/* Quality semáforo — 3 KPIs por estado. */}
       <StatusBreakdownCards breakdown={breakdown} />
 
-      {/* Diagnóstico — bancos | razones | terceros. */}
+      {/* Diagnóstico — bancos | razones de fallo | top retiros. */}
       <TopBancos data={topBancos} />
-      <div className="grid gap-6 lg:grid-cols-2">
-        <FailureReasons rows={failureRows} />
-        <ThirdPartyPayouts rows={thirdParty} />
-      </div>
+      <FailureReasons rows={failureRows} />
+      <TopRetirosBanco rows={topRetiros} />
     </div>
   );
 }

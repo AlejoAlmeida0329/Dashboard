@@ -345,7 +345,7 @@ function parseHumanDate(s: unknown): Date {
  */
 export const PayoutRowSchema = z
   .object({
-    "transaction id": z.string().min(1),
+    "transaction id": z.coerce.string().min(1),
     date: z.unknown().transform((v, ctx): Date => {
       const d = parseHumanDate(v);
       if (Number.isNaN(d.getTime())) {
@@ -357,7 +357,10 @@ export const PayoutRowSchema = z
       }
       return d;
     }),
-    holder: z.string().min(1),
+    // Coerce: 1 production row has a numeric-looking holder name that
+    // Sheets API returns as `number` under UNFORMATTED_VALUE (Row 188).
+    // String() conversion is safe — the row is a real payout.
+    holder: z.coerce.string().min(1),
     value: MoneyFromCOP,
     "destination medium": z
       .union([z.string(), z.number()])
@@ -392,7 +395,7 @@ export const PayoutRowSchema = z
     }),
     "failure reason": OptionalString,
     "failure details": OptionalString,
-    id: z.string().min(1),
+    id: z.coerce.string().min(1),
     // Tolerate the remaining columns silently — present in the Sheet but
     // not consumed by the Payout interface in Phase 3.
     "destination account": OptionalString,

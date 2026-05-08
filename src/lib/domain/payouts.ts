@@ -592,3 +592,76 @@ export function aggregateThirdPartyPayouts(
   out.sort((a, b) => b.monto - a.monto);
   return out;
 }
+
+// === Top usuarios que más retiros han hecho ================================
+
+/**
+ * One row of the top-retiros-banco ranking — grouped by `tikintag`.
+ */
+export interface TopRetiroRow {
+  /** Originating user (from the joined transaction). */
+  tikintag: string;
+  /** Number of retiros initiated by this tikintag (any state). */
+  count: number;
+  /** Number of retiros completed (settled to bank). */
+  countCompleted: number;
+  /** Number of retiros failed. */
+  countFailed: number;
+  /** Number of retiros in_progress. */
+  countInProgress: number;
+  /** Sum of `monto` across COMPLETED retiros only (COP). */
+  montoCompleted: number;
+}
+
+/**
+ * Top-N tikintags by count of retiros a banco initiated. Counted per
+ * payout row from the joined input — caller decides whether to feed the
+ * completed-only or full-period universe.
+ *
+ * Joined rows whose `transaction` is unmatched (payout without a linked
+ * BD_Plataforma row) are EXCLUDED — we cannot attribute them to a user.
+ *
+ * Sort: count DESC, tiebreak montoCompleted DESC, then tikintag lex ASC.
+ *
+ * Pure. O(n + k log k) where k = distinct tikintags.
+ */
+export function aggregateTopRetirosBanco(
+  joined: JoinedPayout[],
+  n = 20,
+): TopRetiroRow[] {
+  const acc = new Map<string, TopRetiroRow>();
+  for (const j of joined) {
+    if (!j.transaction) continue;
+    const tikintag = j.transaction.tikintag;
+    if (!tikintag) continue;
+    let row = acc.get(tikintag);
+    if (!row) {
+      row = {
+        tikintag,
+        count: 0,
+        countCompleted: 0,
+        countFailed: 0,
+        countInProgress: 0,
+        montoCompleted: 0,
+      };
+      acc.set(tikintag, row);
+    }
+    row.count += 1;
+    if (j.state === "completed") {
+      row.countCompleted += 1;
+      row.montoCompleted += j.monto;
+    } else if (j.state === "failed") {
+      row.countFailed += 1;
+    } else if (j.state === "in_progress") {
+      row.countInProgress += 1;
+    }
+  }
+  const ranked = Array.from(acc.values());
+  ranked.sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    if (b.montoCompleted !== a.montoCompleted)
+      return b.montoCompleted - a.montoCompleted;
+    return a.tikintag < b.tikintag ? -1 : a.tikintag > b.tikintag ? 1 : 0;
+  });
+  return ranked.slice(0, n);
+}
