@@ -25,8 +25,9 @@ const TABS: { href: string; label: string }[] = [
   { href: "/inicio", label: "Inicio" },
   { href: "/bonos", label: "Bonos" },
   { href: "/payouts", label: "Payouts" },
-  { href: "/recargas", label: "Recargas" },
+  { href: "/uso-tarjeta", label: "Uso Tarjeta" },
   { href: "/clientes", label: "Clientes" },
+  { href: "/recargas", label: "Recargas" },
 ];
 
 export function TabNav() {
