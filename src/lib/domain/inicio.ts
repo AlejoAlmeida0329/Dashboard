@@ -680,3 +680,250 @@ export function aggregateTransactionTypeDistribution(
   });
   return buckets;
 }
+
+// --- v2 Activity time series (distinct tikintag + signed volumen) -----------
+
+/**
+ * One point on the v2 activity time series chart (INI-V2-05).
+ *
+ * Daily and weekly variants share this shape — same convention as v1
+ * `GMVPoint` and `ActiveEmpresaPoint`. The v2 chart renders BOTH series
+ * over the same x-axis (a single line for `usuariosActivos`, an area for
+ * `volumen`) so a single output type carries both streams.
+ */
+export interface ActivityPointV2 {
+  /** `YYYY-MM-DD` for daily granularity, `RRRR-Www` for weekly. */
+  bucket: string;
+  /**
+   * DISTINCT tikintag count in this bucket (Pitfall 11 closed at the v2
+   * granularity too — a single tikintag with N transactions in one
+   * day/week counts as 1 active user, NOT N). Mirror of v1
+   * `ActiveEmpresaPoint.count` Set-per-bucket convention but keyed by
+   * `tikintag` instead of `empresa_id`.
+   */
+  usuariosActivos: number;
+  /**
+   * Signed sum of `monto` across the bucket's rows (positives + negatives).
+   * The operator-relevant question is "what's the net flow today?"; the
+   * v2 page renders this as a single line, NOT a per-direction split
+   * (the IN/OUT split lives in the headline KPIs from `summarizeInicioV2`).
+   * Negative values are valid (a day where outflows exceeded inflows).
+   */
+  volumen: number;
+}
+
+/**
+ * Group transactions by Bogotá calendar date and emit one point per
+ * non-empty bucket, with distinct-tikintag count + signed volumen sum
+ * (INI-V2-05 daily granularity).
+ *
+ * Set-per-bucket dedup: a tikintag with multiple transactions in one day
+ * counts as 1 active user (Pitfall 11) — same convention as v1
+ * `aggregateActiveEmpresasByDate` at line 316 but keyed by `tikintag`
+ * instead of `empresa_id`.
+ *
+ * Volumen is the signed sum (no `Math.abs`): the v2 chart line answers
+ * "what's the net flow that day?", not "how much money moved through?".
+ *
+ * NO zero-fill — Recharts continuous-axis spacing handles missing days
+ * (same convention as v1 `aggregateGMVByDate` at line 252).
+ *
+ * Output sorted ASCENDING by `bucket` (string-sortable since
+ * `YYYY-MM-DD` is lexicographically chronological). Empty input → `[]`.
+ *
+ * Pure: returns a new array; does not mutate input.
+ */
+export function aggregateActivityByDateV2(
+  transactions: Transaction[],
+): ActivityPointV2[] {
+  const byBucket = new Map<
+    string,
+    { tikintags: Set<string>; volumen: number }
+  >();
+  for (const t of transactions) {
+    const bucket = formatInTimeZone(t.fecha, BOGOTA_TZ, "yyyy-MM-dd");
+    let acc = byBucket.get(bucket);
+    if (!acc) {
+      acc = { tikintags: new Set<string>(), volumen: 0 };
+      byBucket.set(bucket, acc);
+    }
+    if (t.tikintag) acc.tikintags.add(t.tikintag);
+    acc.volumen += t.monto;
+  }
+  return Array.from(byBucket, ([bucket, acc]) => ({
+    bucket,
+    usuariosActivos: acc.tikintags.size,
+    volumen: acc.volumen,
+  })).sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0));
+}
+
+/**
+ * ISO-week variant of `aggregateActivityByDateV2` (INI-V2-05 weekly
+ * granularity). Same Set-per-bucket dedup contract — Pitfall 11 closed
+ * at week granularity too.
+ *
+ * Bucket format `RRRR-'W'II` (e.g. `2026-W18`); see v1
+ * `aggregateGMVByWeek` for the rationale on `RRRR` (ISO week-numbering
+ * year) vs `yyyy` (calendar year). Using `yyyy` would mis-bucket ~5
+ * days per year (e.g. 2024-12-30 / 2024-12-31 are in 2025-W01).
+ *
+ * NO zero-fill. Sorted ASCENDING by `bucket` (string-sortable since
+ * `RRRR-Www` is lexicographically chronological). Empty input → `[]`.
+ *
+ * Pure.
+ */
+export function aggregateActivityByWeekV2(
+  transactions: Transaction[],
+): ActivityPointV2[] {
+  const byBucket = new Map<
+    string,
+    { tikintags: Set<string>; volumen: number }
+  >();
+  for (const t of transactions) {
+    const bucket = formatInTimeZone(t.fecha, BOGOTA_TZ, "RRRR-'W'II");
+    let acc = byBucket.get(bucket);
+    if (!acc) {
+      acc = { tikintags: new Set<string>(), volumen: 0 };
+      byBucket.set(bucket, acc);
+    }
+    if (t.tikintag) acc.tikintags.add(t.tikintag);
+    acc.volumen += t.monto;
+  }
+  return Array.from(byBucket, ([bucket, acc]) => ({
+    bucket,
+    usuariosActivos: acc.tikintags.size,
+    volumen: acc.volumen,
+  })).sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0));
+}
+
+// --- v2 Top users by volume (grouped by tikintag, NOT empresa) -------------
+
+/**
+ * One row of the top-users-by-volume ranking (INI-V2-06).
+ *
+ * Grouped by `tikintag` (the user) NOT by `empresa_id`. This is the
+ * explicit v1→v2 user-lens shift catalogued in STATE.md (Plan 08-04
+ * — "tikintag is the canonical user identity at v2 ranking layer").
+ * Joins the family of v2 user-lens rankings:
+ *   - Bonos TopEmisores  / TopReceptores  (sourceTransferTikintag / dest...)
+ *   - Uso Tarjeta TopCardUsers           (tikintag)
+ *   - Recargas TopRechargers             (tikintag)
+ *   - Inicio TopUsersByVolume            (tikintag) ← this one
+ *
+ * The `empresa` column is shown as a denormalized label for table
+ * display (the user's first observed `empresa_nombre`), NOT the
+ * ranking key — same convention as `TopRecharger.empresa` in
+ * `recargas.ts:371` and `TopCardUser.empresa` in `cardUsage.ts:124`.
+ */
+export interface TopUserVolumeRow {
+  /** Ranking key: the user's tikintag. */
+  tikintag: string;
+  /**
+   * Best-effort empresa label (first observed `empresa_nombre` for this
+   * tikintag). Today (Phase 2 default) `empresa_nombre === tikintag` so
+   * this field is always populated; type stays `string | undefined`
+   * defensively for the eventual schema evolution where empresa becomes
+   * a separate display column.
+   */
+  empresa: string | undefined;
+  /**
+   * Sum of `monto` across `direction === 'in'` rows for this tikintag
+   * (gross inflows; positives only by direction-sign convention).
+   */
+  volumenIn: number;
+  /**
+   * Sum of `Math.abs(monto)` across `direction === 'out'` rows for this
+   * tikintag (gross outflows; abs because BD_Plataforma stores out
+   * montos as negative — same convention as `summarizePurchases` and
+   * `summarizeInicioV2.volumenOut`).
+   */
+  volumenOut: number;
+  /**
+   * `volumenIn - volumenOut` — the RANKING KEY per INI-V2-06. The
+   * operator-relevant headline is "net activity": positive = net
+   * receiver (more inflow than outflow), negative = net spender. Both
+   * extremes are interesting at the top of a ranking; the v2 page can
+   * sort the table by abs(volumenNeto) at the leaf if it wants the
+   * "most active in either direction" framing, or keep DESC by signed
+   * neto for the "biggest net receivers" framing.
+   */
+  volumenNeto: number;
+  /** Count of rows for this tikintag (any direction, any status). */
+  transacciones: number;
+}
+
+/**
+ * Top-N tikintags ranked by `volumenNeto` DESC (INI-V2-06).
+ *
+ * Algorithm:
+ *   1. Group rows by `tikintag` into accumulator Map. Per group:
+ *      - Sum `monto` per direction (`in` → volumenIn,
+ *        `out` → volumenOut via `Math.abs`).
+ *      - Increment `transacciones` on every row regardless of direction
+ *        / status (this is the "how active is this user" headline,
+ *        complementing the ranking key).
+ *      - Capture first-observed `empresa_nombre` (first-occurrence-wins
+ *        — same convention as `findTopEmpresaByGMV` in
+ *        `inicio-hechos.ts:113-122`).
+ *   2. Compute `volumenNeto = volumenIn - volumenOut` per tikintag.
+ *   3. Sort DESC by `volumenNeto`. Deterministic tiebreak: then DESC
+ *      by `transacciones`, then `tikintag` lexicographic ASC.
+ *   4. Slice to top `limit`.
+ *
+ * Rows where `tikintag` is empty/falsy are skipped — defensive: a
+ * peer-less row cannot be attributed to a user.
+ *
+ * Pure. Empty input → `[]`. O(n + k log k) where k = distinct tikintags.
+ *
+ * @example
+ *   aggregateTopUsersByVolume([
+ *     { tikintag: '$alice', direction: 'in',  monto:  100000, ... },
+ *     { tikintag: '$alice', direction: 'out', monto: -25000,  ... },
+ *     { tikintag: '$bob',   direction: 'in',  monto:  50000,  ... },
+ *   ], 5)
+ *   // → [
+ *   //   { tikintag: '$alice', volumenIn: 100000, volumenOut: 25000,
+ *   //     volumenNeto: 75000, transacciones: 2, empresa: '$alice' },
+ *   //   { tikintag: '$bob',   volumenIn:  50000, volumenOut:     0,
+ *   //     volumenNeto: 50000, transacciones: 1, empresa: '$bob'   },
+ *   // ]
+ */
+export function aggregateTopUsersByVolume(
+  transactions: Transaction[],
+  limit = 10,
+): TopUserVolumeRow[] {
+  const acc = new Map<string, TopUserVolumeRow>();
+  for (const t of transactions) {
+    if (!t.tikintag) continue;
+    let row = acc.get(t.tikintag);
+    if (!row) {
+      row = {
+        tikintag: t.tikintag,
+        empresa: t.empresa_nombre || undefined,
+        volumenIn: 0,
+        volumenOut: 0,
+        volumenNeto: 0, // computed in second pass
+        transacciones: 0,
+      };
+      acc.set(t.tikintag, row);
+    }
+    if (t.direction === "in") {
+      row.volumenIn += t.monto;
+    } else if (t.direction === "out") {
+      row.volumenOut += Math.abs(t.monto);
+    }
+    row.transacciones += 1;
+  }
+
+  const ranked = Array.from(acc.values());
+  for (const row of ranked) {
+    row.volumenNeto = row.volumenIn - row.volumenOut;
+  }
+  ranked.sort((a, b) => {
+    if (b.volumenNeto !== a.volumenNeto) return b.volumenNeto - a.volumenNeto;
+    if (b.transacciones !== a.transacciones)
+      return b.transacciones - a.transacciones;
+    return a.tikintag < b.tikintag ? -1 : a.tikintag > b.tikintag ? 1 : 0;
+  });
+  return ranked.slice(0, limit);
+}
