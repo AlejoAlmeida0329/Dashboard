@@ -45,13 +45,19 @@ export function TopEmisores({ rows }: Props) {
                 <th className="pb-2 text-right font-medium tabular-nums">
                   Volumen
                 </th>
+                <th className="pb-2 text-right font-medium tabular-nums">
+                  Fee
+                </th>
+                <th className="pb-2 text-right font-medium tabular-nums">
+                  % Fee
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={6}
                     className="py-6 text-center text-sm text-muted-foreground"
                   >
                     Sin emisores en el período
@@ -74,6 +80,12 @@ export function TopEmisores({ rows }: Props) {
                     </td>
                     <td className="py-2 text-right tabular-nums">
                       {formatCOP(r.monto)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {formatCOP(r.fee)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-muted-foreground">
+                      {(r.feePct * 100).toFixed(2)}%
                     </td>
                   </tr>
                 ))

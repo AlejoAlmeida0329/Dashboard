@@ -132,14 +132,18 @@ export interface BonoByDateV2 {
   montoOut: number;
 }
 
-/** One row of the top-emisores or top-receptores ranking. */
+/** One row of the top-emisores ranking. */
 export interface BonoTikintagRow {
-  /** Tikintag (sender for emisores, receiver for receptores). */
+  /** Tikintag (the sender / payer of bonos). */
   tikintag: string;
-  /** Number of bonos this tikintag emitted/received in the filtered set. */
+  /** Number of bonos this tikintag emitted in the filtered set. */
   count: number;
   /** Sum of `monto` across those bonos (COP). */
   monto: number;
+  /** Sum of `comision` (= total_transaction_fee) across those bonos. */
+  fee: number;
+  /** `fee / monto` — effective fee % (0..1). `0` when monto is 0. */
+  feePct: number;
 }
 
 // === v2 Filter (allows BOTH directions; honors filters.status from URL) =====
@@ -317,11 +321,21 @@ export function aggregateTopEmisores(
     if (cur) {
       cur.count += 1;
       cur.monto += b.monto;
+      cur.fee += b.comision;
     } else {
-      acc.set(tikintag, { tikintag, count: 1, monto: b.monto });
+      acc.set(tikintag, {
+        tikintag,
+        count: 1,
+        monto: b.monto,
+        fee: b.comision,
+        feePct: 0,
+      });
     }
   }
   const rows = Array.from(acc.values());
+  for (const r of rows) {
+    r.feePct = r.monto > 0 ? r.fee / r.monto : 0;
+  }
   rows.sort((a, b) => {
     if (b.monto !== a.monto) return b.monto - a.monto;
     if (b.count !== a.count) return b.count - a.count;
