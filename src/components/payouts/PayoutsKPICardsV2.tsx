@@ -1,13 +1,14 @@
 /**
  * PayoutsKPICardsV2 — TIME-FIRST cockpit header (PAY-V2-01..03, PAY-V2-08).
  *
- * Server Component. Renders FIVE KPI cards in a responsive 1 → 2 → 5 col
- * grid:
- *   1. Tiempo promedio  (formatMinutes)        — PRIMARY, text-4xl, section-payouts
- *   2. Tasa de éxito    (formatPercent)        — semáforo: ≥95% verde, ≥85% amber, else rojo
- *   3. Total payouts    (formatInteger)        — text-muted-foreground
- *   4. Volumen retirado (formatCOP)            — section-payouts
- *   5. Pagos a terceros (formatInteger)        — section-payouts
+ * Server Component. Renders SIX KPI cards in a responsive 1 → 2 → 3 col
+ * grid (two rows of three at lg+ — fits long COP values without clipping):
+ *   1. Tiempo promedio   (formatMinutes)       — PRIMARY, text-4xl, section-payouts
+ *   2. Tasa de éxito     (formatPercent)       — semáforo: ≥95% verde, ≥85% amber, else rojo
+ *   3. Total payouts     (formatInteger)       — text-muted-foreground
+ *   4. Volumen retirado  (formatCOP)           — section-payouts
+ *   5. Pagos a terceros  (formatInteger)       — section-payouts
+ *   6. Retiros / usuario (toFixed(1))          — section-payouts
  *
  * Vision (07-CONTEXT.md essential "Payouts: time-first"):
  *   The first scroll answers "¿qué tan rápido procesamos?" before any
@@ -69,7 +70,7 @@ export function PayoutsKPICardsV2({
   uniqueUsers,
 }: Props) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {/* 1. Tiempo promedio — PRIMARY */}
       <Card>
         <CardHeader>
