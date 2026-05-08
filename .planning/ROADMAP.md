@@ -146,7 +146,7 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10. Phases 7 y 8 son in
 | 7. Bonos + Payouts | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 8. Uso Tarjeta + Recargas | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 9. Vista Cliente | v2.0 | 3/3 | ✅ Complete | 2026-05-08 |
-| 10. Inicio + Infrastructure | v2.0 | 0/TBD | Not started | — |
+| 10. Inicio + Infrastructure | v2.0 | 1/3 | 🚧 In progress | — |
 
 ---
 *Roadmap created: 2026-05-07 (v2.0 milestone kickoff)*
