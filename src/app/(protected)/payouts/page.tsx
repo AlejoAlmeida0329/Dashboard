@@ -162,6 +162,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
   const failureRows = aggregateFailureReasons(periodOnly);
   const topBancos = aggregateTopBancos(completed);
   const montoTotalCompleted = completed.reduce((s, p) => s + p.monto, 0);
+  const costoTotalCompleted = completed.reduce((s, p) => s + p.costo, 0);
 
   // Third-party detection (still feeds the KPI count) joins completed
   // payouts only per PAY-V2-08 KPI semantics. The top-retiros ranking
@@ -206,6 +207,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
           thirdPartyCount={thirdParty.length}
           avgPayoutsPerUser={avgPayoutsPerUser}
           uniqueUsers={uniqueUsers}
+          costoTotalCompleted={costoTotalCompleted}
         />
         <Card>
           <CardHeader>
@@ -233,6 +235,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
         thirdPartyCount={thirdParty.length}
         avgPayoutsPerUser={avgPayoutsPerUser}
         uniqueUsers={uniqueUsers}
+        costoTotalCompleted={costoTotalCompleted}
       />
 
       {/* Aging alert — only when something's stuck. AgingAlert returns

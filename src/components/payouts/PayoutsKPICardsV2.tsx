@@ -1,14 +1,15 @@
 /**
  * PayoutsKPICardsV2 — TIME-FIRST cockpit header (PAY-V2-01..03, PAY-V2-08).
  *
- * Server Component. Renders SIX KPI cards in a responsive 1 → 2 → 3 col
- * grid (two rows of three at lg+ — fits long COP values without clipping):
+ * Server Component. Renders SEVEN KPI cards in a responsive 1 → 2 → 3 col
+ * grid (3+3+1 at lg+ — fits long COP values without clipping):
  *   1. Tiempo promedio   (formatMinutes)       — PRIMARY, text-4xl, section-payouts
  *   2. Tasa de éxito     (formatPercent)       — semáforo: ≥95% verde, ≥85% amber, else rojo
  *   3. Total payouts     (formatInteger)       — text-muted-foreground
  *   4. Volumen retirado  (formatCOP)           — section-payouts
- *   5. Pagos a terceros  (formatInteger)       — section-payouts
- *   6. Retiros / usuario (toFixed(1))          — section-payouts
+ *   5. Costos totales    (formatCOP + % efect) — section-payouts (BD_Payouts.Transaction Cost)
+ *   6. Pagos a terceros  (formatInteger)       — section-payouts
+ *   7. Retiros / usuario (toFixed(1))          — section-payouts
  *
  * Vision (07-CONTEXT.md essential "Payouts: time-first"):
  *   The first scroll answers "¿qué tan rápido procesamos?" before any
@@ -47,6 +48,8 @@ type Props = {
   avgPayoutsPerUser: number;
   /** Distinct tikintags with ≥1 attributable payout (denominator of avg). */
   uniqueUsers: number;
+  /** Sum of `Payout.costo` (= BD_Payouts "Transaction Cost") across completed payouts. */
+  costoTotalCompleted: number;
 };
 
 /**
@@ -68,6 +71,7 @@ export function PayoutsKPICardsV2({
   thirdPartyCount,
   avgPayoutsPerUser,
   uniqueUsers,
+  costoTotalCompleted,
 }: Props) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -134,7 +138,24 @@ export function PayoutsKPICardsV2({
         </CardContent>
       </Card>
 
-      {/* 5. Pagos a terceros */}
+      {/* 5. Costos totales (BD_Payouts.Transaction Cost) */}
+      <Card>
+        <CardHeader>
+          <CardDescription>Costos totales</CardDescription>
+          <CardTitle className="font-heading text-section-payouts text-3xl tabular-nums">
+            {formatCOP(costoTotalCompleted)}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground">
+            {montoTotalCompleted > 0
+              ? `${((costoTotalCompleted / montoTotalCompleted) * 100).toFixed(2)}% efectivo`
+              : "Sin payouts completados"}
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* 6. Pagos a terceros */}
       <Card>
         <CardHeader>
           <CardDescription>Pagos a terceros</CardDescription>
@@ -149,7 +170,7 @@ export function PayoutsKPICardsV2({
         </CardContent>
       </Card>
 
-      {/* 6. Promedio retiros por usuario */}
+      {/* 7. Promedio retiros por usuario */}
       <Card>
         <CardHeader>
           <CardDescription>Retiros / usuario</CardDescription>
