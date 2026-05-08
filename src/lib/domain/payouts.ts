@@ -21,54 +21,28 @@
  *     the "números incuestionables" essential of Phase 3 (03-CONTEXT.md)
  *     lives here.
  *
- * Default Payouts filter contract (the "what counts as a successful payout?"):
- *   1. `state === "completed"` — Plan 03-01 confirmed live: 3 distinct
- *      states (completed, in_progress, failed). Per 03-CONTEXT.md essentials
- *      ("solo payouts que efectivamente se completaron"), in_progress and
- *      failed do NOT influence headline P50/P95/histogram numbers. The
- *      `latencySeconds` fallback to Aging in types.ts exists defensively —
- *      this filter is the gate that makes the fallback never matter for
- *      headline numbers.
- *   2. Bogotá-anchored from/to (inclusive on both ends) — same convention
- *      as `filterBonos`.
- *   3. Optional empresa filter via `p.empresa_id === filters.empresa`.
- *      IMPORTANT: `Holder` is a CARDHOLDER NAME (Plan 03-01 finding), NOT
- *      a tikintag. So the empresa filter cannot use `holder`. Plan 03-04
- *      page composition is responsible for enriching `Payout.empresa_id`
- *      via a `transactionId` join to BD_Plataforma when `filters.empresa`
- *      is set. Without that join, `p.empresa_id` is undefined and the
- *      empresa filter naturally returns nothing — which is the correct
- *      safety behavior (better empty than wrong-empresa data).
+ * Surface scope (post Plan 10-02):
+ *   v2-only — the v1 default-Payouts filter contract (`filterPayouts`,
+ *   `summarizePayouts`, `PayoutSummary`, `COMPLETED_PAYOUT_STATES`) was
+ *   pruned 2026-05-08 in Plan 10-02's cohesive prune commit (closing the
+ *   Plan 07-04 deferral docket). The v2 surface (filterPayoutsV2 +
+ *   summarizePayoutsByState + aggregateAverageProcessingMinutes +
+ *   aggregateAgingAlertPending + aggregateFailureReasons +
+ *   aggregateThirdPartyPayouts + aggregateTopBancos + quantileSorted +
+ *   types) is the only consumer-facing API.
  *
  * Scope adjustment from Plan 03-01 findings (decided 2026-05-04):
  *   - All 798 production payouts are to BANKS (12 distinct codes); zero
  *     card payouts. PAY-04's "split tarjeta vs banco" cannot be honored.
- *   - The histogram aggregator (Task 2 in this plan) has NO medium stack —
- *     emitting a tarjeta=0 series would visually misrepresent reality.
  *   - The destination story is told by `aggregateTopBancos` (top N banks
- *     by montoTotal + Otros bancos rollup) which Plan 03-03 will render
- *     as a TopBancos widget. This replaces the originally planned
- *     `aggregateByDestination` (tarjeta/banco binary).
+ *     by montoTotal + Otros bancos rollup). This replaces the originally
+ *     planned `aggregateByDestination` (tarjeta/banco binary).
  */
 
 import type { DashboardFilters } from "@/lib/url-state";
 
 import type { JoinedPayout } from "./join";
 import type { Payout, PayoutState } from "./types";
-
-// --- Constants --------------------------------------------------------------
-
-/**
- * `PayoutState` values that count as a "successfully-completed" payout
- * for headline metrics (P50/P95 latency, histogram, top-bancos amounts).
- *
- * Plan 03-01 captured live distinct states (`completed`, `in_progress`,
- * `failed`) — see 03-01-SUMMARY.md "Diagnostic Findings". Only `completed`
- * counts. If Tikin later splits completion into multiple terminal states
- * (e.g. `settled`, `confirmed`), append them to this array — that's the
- * only edit needed.
- */
-const COMPLETED_PAYOUT_STATES: readonly PayoutState[] = ["completed"];
 
 // --- Date parse helpers -----------------------------------------------------
 
@@ -106,70 +80,6 @@ function endOfDayBogotaTimestamp(s: string | undefined): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return Number.POSITIVE_INFINITY;
   const t = Date.parse(`${s}T23:59:59.999-05:00`);
   return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
-}
-
-// --- Output types -----------------------------------------------------------
-
-/** Header KPIs for the Payouts tab. */
-export interface PayoutSummary {
-  /** Number of completed payouts in the filtered range. */
-  count: number;
-  /** Sum of `monto` across the filtered set (COP). */
-  montoTotal: number;
-  /** Median (50th percentile) latency in seconds. `0` (not NaN) when count is `0`. */
-  p50Seconds: number;
-  /** 95th percentile latency in seconds. `0` (not NaN) when count is `0`. */
-  p95Seconds: number;
-}
-
-// --- Filtering --------------------------------------------------------------
-
-/**
- * Apply the Default Payouts filter contract to a list of payouts.
- *
- * Default filter (the "successful payout" definition):
- *   1. `state ∈ COMPLETED_PAYOUT_STATES` (currently just `'completed'`)
- *   2. `from` filter — `p.fecha >= startOfDay(from)` in Bogotá.
- *      Unparseable `from` → no lower bound (degrade gracefully).
- *   3. `to` filter — `p.fecha <= endOfDay(to)` in Bogotá.
- *      Unparseable `to` → no upper bound.
- *   4. `empresa` filter — `p.empresa_id === filters.empresa`.
- *      Empty/undefined → no empresa restriction.
- *
- * NOTE on empresa: `Payout.empresa_id` is `undefined` until Plan 03-04
- * populates it via Transaction ID join. When `filters.empresa` is set
- * but the join hasn't been performed, this function returns `[]` —
- * which is the correct safety behavior (better empty than mismatched).
- * Plan 03-04 page composition MUST run the join before calling this
- * if it intends to honor an empresa filter.
- *
- * Pure: returns a new array; does not mutate `payouts`.
- *
- * @example
- *   filterPayouts(allPayouts, { from: '2026-04-01', to: '2026-04-30' })
- *   // → only completed payouts in April 2026
- */
-export function filterPayouts(
-  payouts: Payout[],
-  filters: DashboardFilters,
-): Payout[] {
-  const completedSet = new Set<string>(COMPLETED_PAYOUT_STATES);
-  const fromTs = startOfDayBogotaTimestamp(filters.from);
-  const toTs = endOfDayBogotaTimestamp(filters.to);
-  const empresa = filters.empresa;
-
-  return payouts.filter((p) => {
-    if (!completedSet.has(p.state)) return false;
-
-    const ts = p.fecha.getTime();
-    if (!Number.isFinite(ts)) return false;
-    if (ts < fromTs) return false;
-    if (ts > toTs) return false;
-
-    if (empresa && p.empresa_id !== empresa) return false;
-
-    return true;
-  });
 }
 
 // --- Percentile primitive ---------------------------------------------------
@@ -221,49 +131,6 @@ export function quantileSorted(
   const hi = Math.ceil(h);
   if (lo === hi) return sortedValues[lo];
   return sortedValues[lo] + (h - lo) * (sortedValues[hi] - sortedValues[lo]);
-}
-
-// --- Aggregations -----------------------------------------------------------
-
-/**
- * Compute header KPIs from an already-filtered list of completed payouts.
- *
- * Pure. Empty input → `{ count: 0, montoTotal: 0, p50Seconds: 0, p95Seconds: 0 }`
- * (no NaN / Infinity).
- *
- * Sort the latencies ONCE and reuse the sorted array for both p50 and p95
- * — `quantileSorted` requires sorted input and the n log n cost should not
- * be paid twice.
- *
- * @example
- *   summarizePayouts([
- *     { monto: 200000, latencySeconds: 1800,  ... }, // 30 min
- *     { monto: 500000, latencySeconds: 3600,  ... }, // 1 hour
- *     { monto: 100000, latencySeconds: 7200,  ... }, // 2 hours
- *   ])
- *   // → { count: 3, montoTotal: 800000, p50Seconds: 3600, p95Seconds: 6840 }
- *   //   (p95: h=2*0.95=1.9, v[1]=3600, v[2]=7200, 3600 + 0.9*3600 = 6840)
- */
-export function summarizePayouts(payouts: Payout[]): PayoutSummary {
-  const count = payouts.length;
-  if (count === 0) {
-    return { count: 0, montoTotal: 0, p50Seconds: 0, p95Seconds: 0 };
-  }
-
-  let montoTotal = 0;
-  const latencies: number[] = new Array(count);
-  for (let i = 0; i < count; i += 1) {
-    const p = payouts[i];
-    montoTotal += p.monto;
-    latencies[i] = p.latencySeconds;
-  }
-  // Sort ASCENDING once; reuse for both percentile calls.
-  latencies.sort((a, b) => a - b);
-
-  const p50Seconds = quantileSorted(latencies, 0.5);
-  const p95Seconds = quantileSorted(latencies, 0.95);
-
-  return { count, montoTotal, p50Seconds, p95Seconds };
 }
 
 // --- Top bancos (replaces aggregateByDestination per Plan 03-01 findings) ---

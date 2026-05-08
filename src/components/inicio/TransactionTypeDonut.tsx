@@ -36,8 +36,8 @@
  *
  * Empty input handling:
  *   `buckets.length === 0` → render a friendly muted-foreground line. Recharts
- *   would otherwise show a confusing empty disk. Same convention as the v1
- *   GMVTrendChart empty-state.
+ *   would otherwise show a confusing empty disk. Same empty-state idiom
+ *   as PurchaseTrendChart / RecargasTrendChartV2.
  *
  * Format gates: tooltip values via `@/lib/format` (formatInteger,
  * formatPercent).

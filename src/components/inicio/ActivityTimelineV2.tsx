@@ -35,8 +35,8 @@
  * Empty / sparse handling:
  *   `data.length < 2` → render a friendly muted-foreground line. With
  *   < 2 points Recharts paints either nothing (0 points) or a single dot
- *   that misleads as "the trend" (1 point). Same convention as v1
- *   GMVTrendChart.
+ *   that misleads as "the trend" (1 point). Same convention as
+ *   PurchaseTrendChart / RecargasTrendChartV2 sparse-input handling.
  *
  * Format gates: tooltip values via `@/lib/format` (formatInteger, formatCOP).
  */
