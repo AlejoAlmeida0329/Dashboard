@@ -52,12 +52,12 @@
 
 ### Uso Tarjeta (NEW — replaces v1.0 Recargas slot in tab order)
 
-- [ ] **CARD-V2-01**: Total compras con tarjeta (PURCHASE · direction=out)
-- [ ] **CARD-V2-02**: Volumen total de compras COP
-- [ ] **CARD-V2-03**: Ticket promedio de compra
-- [ ] **CARD-V2-04**: Adopción de tarjeta (% usuarios con ≥1 PURCHASE)
-- [ ] **CARD-V2-05**: Tendencia de uso en el tiempo
-- [ ] **CARD-V2-06**: Top usuarios por uso de tarjeta (tabla rankeable)
+- [x] **CARD-V2-01**: Total compras con tarjeta (PURCHASE · direction=out)
+- [x] **CARD-V2-02**: Volumen total de compras COP
+- [x] **CARD-V2-03**: Ticket promedio de compra
+- [x] **CARD-V2-04**: Adopción de tarjeta (% usuarios con ≥1 PURCHASE)
+- [x] **CARD-V2-05**: Tendencia de uso en el tiempo
+- [x] **CARD-V2-06**: Top usuarios por uso de tarjeta (tabla rankeable)
 
 ### Vista Cliente (rebuilt — más rica, dual-purpose)
 
@@ -78,14 +78,14 @@
 
 > Datos baseline: 137 recargas (116 PSE + 21 Transfer) · 40 usuarios únicos (17% adopción) · ~$743M COP volumen · Recarga promedio $5.4M · 100% completadas.
 
-- [ ] **REC-V2-01**: Total recargas realizadas (PAYIN_PSE + PAYIN_TRANSFER, direction=in)
-- [ ] **REC-V2-02**: Volumen total recargado COP
-- [ ] **REC-V2-03**: Usuarios que han recargado (KPI + % de adopción 40/235)
-- [ ] **REC-V2-04**: PSE vs Transferencia (2 KPIs o donut con split 85% / 15%)
-- [ ] **REC-V2-05**: Recarga promedio
-- [ ] **REC-V2-06**: Distribución de montos (histograma: <$100K / $100K-$1M / >$1M)
-- [ ] **REC-V2-07**: Top usuarios por volumen recargado (tabla rankeable)
-- [ ] **REC-V2-08**: Recargas en el tiempo (línea temporal)
+- [x] **REC-V2-01**: Total recargas realizadas (PAYIN_PSE + PAYIN_TRANSFER, direction=in)
+- [x] **REC-V2-02**: Volumen total recargado COP
+- [x] **REC-V2-03**: Usuarios que han recargado (KPI + % de adopción 40/235)
+- [x] **REC-V2-04**: PSE vs Transferencia (2 KPIs o donut con split 85% / 15%)
+- [x] **REC-V2-05**: Recarga promedio
+- [x] **REC-V2-06**: Distribución de montos (histograma: <$100K / $100K-$1M / >$1M)
+- [x] **REC-V2-07**: Top usuarios por volumen recargado (tabla rankeable)
+- [x] **REC-V2-08**: Recargas en el tiempo (línea temporal)
 
 ### Infrastructure
 
@@ -147,20 +147,20 @@ Mapped during `/gsd:create-roadmap` (2026-05-07). All 51 v1 requirements mapped 
 | PAY-V2-06   | Phase 7 | Complete |
 | PAY-V2-07   | Phase 7 | Complete |
 | PAY-V2-08   | Phase 7 | Complete |
-| CARD-V2-01  | Phase 8 | Pending |
-| CARD-V2-02  | Phase 8 | Pending |
-| CARD-V2-03  | Phase 8 | Pending |
-| CARD-V2-04  | Phase 8 | Pending |
-| CARD-V2-05  | Phase 8 | Pending |
-| CARD-V2-06  | Phase 8 | Pending |
-| REC-V2-01   | Phase 8 | Pending |
-| REC-V2-02   | Phase 8 | Pending |
-| REC-V2-03   | Phase 8 | Pending |
-| REC-V2-04   | Phase 8 | Pending |
-| REC-V2-05   | Phase 8 | Pending |
-| REC-V2-06   | Phase 8 | Pending |
-| REC-V2-07   | Phase 8 | Pending |
-| REC-V2-08   | Phase 8 | Pending |
+| CARD-V2-01  | Phase 8 | Complete |
+| CARD-V2-02  | Phase 8 | Complete |
+| CARD-V2-03  | Phase 8 | Complete |
+| CARD-V2-04  | Phase 8 | Complete |
+| CARD-V2-05  | Phase 8 | Complete |
+| CARD-V2-06  | Phase 8 | Complete |
+| REC-V2-01   | Phase 8 | Complete |
+| REC-V2-02   | Phase 8 | Complete |
+| REC-V2-03   | Phase 8 | Complete |
+| REC-V2-04   | Phase 8 | Complete |
+| REC-V2-05   | Phase 8 | Complete |
+| REC-V2-06   | Phase 8 | Complete |
+| REC-V2-07   | Phase 8 | Complete |
+| REC-V2-08   | Phase 8 | Complete |
 | CLI-V2-01   | Phase 9 | Pending |
 | CLI-V2-02   | Phase 9 | Pending |
 | CLI-V2-03   | Phase 9 | Pending |

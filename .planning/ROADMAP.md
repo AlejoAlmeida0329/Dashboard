@@ -36,7 +36,7 @@ Detalle archivado en [.planning/milestones/v1.0-ROADMAP.md](./milestones/v1.0-RO
 
 - [x] **Phase 6: Foundation v2** — cross-cutting: parsing utils, JOIN helper, filtros globales extendidos, paleta por sección, dark mode, sistema de visibility por métrica
 - [x] **Phase 7: Bonos + Payouts (rebuilt)** — split source/destination en Bonos; eficiencia/banco/fallos/terceros en Payouts
-- [ ] **Phase 8: Uso Tarjeta + Recargas** — pestaña nueva PURCHASE; Recargas extendida con PAYIN_TRANSFER
+- [x] **Phase 8: Uso Tarjeta + Recargas** — pestaña nueva PURCHASE; Recargas extendida con PAYIN_TRANSFER
 - [ ] **Phase 9: Vista Cliente (rebuilt)** — selector tikintag, 5 KPIs cabecera, JOIN enriquecido, P2P, tiempo vs benchmark, timeline cronológico (dual-purpose visibility)
 - [ ] **Phase 10: Inicio + Infrastructure** — home page agregada (operativo lens) + dominio propio (INFRA-04)
 
@@ -144,7 +144,7 @@ Phases execute in numeric order: 6 → 7 → 8 → 9 → 10. Phases 7 y 8 son in
 | 5. Clientes + Domain | v1.0 | — | ✅ Complete | 2026-05-06 |
 | 6. Foundation v2 | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 7. Bonos + Payouts | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
-| 8. Uso Tarjeta + Recargas | v2.0 | 0/TBD | Not started | — |
+| 8. Uso Tarjeta + Recargas | v2.0 | 4/4 | ✅ Complete | 2026-05-07 |
 | 9. Vista Cliente | v2.0 | 0/TBD | Not started | — |
 | 10. Inicio + Infrastructure | v2.0 | 0/TBD | Not started | — |
 
