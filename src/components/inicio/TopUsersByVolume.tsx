@@ -14,9 +14,9 @@
  *                         (BONUS-in `sourceTransferTikintag` más frecuente);
  *                         em-dash cuando el usuario nunca recibió bono
  *   4. Tx               — canonical event rows for this user (any status)
- *   5. Ticket promedio  — `volumenOut / count(completed OUT events)`
- *   6. Volumen OUT ★    — RANKING KEY — sum PAYOUT_BANK + PURCHASE-out
+ *   5. Volumen OUT ★    — RANKING KEY — sum PAYOUT_BANK + PURCHASE-out
  *                         completados (COP)
+ *   6. Ticket promedio  — `volumenOut / count(completed OUT events)`
  *
  * Numeric columns right-aligned with `tabular-nums`.
  */
@@ -46,9 +46,6 @@ export function TopUsersByVolume({ rows }: Props) {
             <th className="pb-2 font-medium">Tikintag</th>
             <th className="pb-2 font-medium">Empresa</th>
             <th className="pb-2 text-right font-medium tabular-nums">Tx</th>
-            <th className="pb-2 text-right font-medium tabular-nums">
-              Ticket promedio
-            </th>
             {/* Primary ranking column — marked with ★ so the user can see
                 at a glance which metric the table is sorted by. */}
             <th className="pb-2 text-right font-medium tabular-nums text-foreground">
@@ -56,6 +53,9 @@ export function TopUsersByVolume({ rows }: Props) {
               <span title="Columna de ordenamiento (descendente)">
                 Volumen OUT
               </span>
+            </th>
+            <th className="pb-2 text-right font-medium tabular-nums">
+              Ticket promedio
             </th>
           </tr>
         </thead>
@@ -82,11 +82,11 @@ export function TopUsersByVolume({ rows }: Props) {
               <td className="py-2 text-right tabular-nums">
                 {formatInteger(row.transacciones)}
               </td>
-              <td className="py-2 text-right tabular-nums text-muted-foreground">
-                {formatCOP(row.ticketPromedio)}
-              </td>
               <td className="py-2 text-right tabular-nums font-medium text-foreground">
                 {formatCOP(row.volumenOut)}
+              </td>
+              <td className="py-2 text-right tabular-nums text-muted-foreground">
+                {formatCOP(row.ticketPromedio)}
               </td>
             </tr>
           ))}
