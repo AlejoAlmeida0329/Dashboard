@@ -61,13 +61,42 @@ import type { Transaction } from "./types";
 import type { JoinedPayout } from "./join";
 import type { DashboardFilters } from "@/lib/url-state";
 
-// Note on imports: the Task-2 functions (`aggregateClienteP2P` /
-// `aggregateClienteTimeline`) will append `formatInTimeZone` from `date-fns-tz`
-// (for Bogotá date math), the day-boundary helpers, and the `Payout` /
-// `BOGOTA_TZ` symbols. They are deliberately deferred from Task 1 to keep
-// the lint surface clean (no `unused-vars` warnings during the inter-task
-// commit window). The plan declares this module's full import contract in
-// its `<action>` block; Task 2's append fulfills it.
+// --- Date parse helpers (Bogotá-anchored) ----------------------------------
+//
+// Verbatim copies from `clientes.ts:86-109`. Sixth domain module to make
+// the DRY-vs-cohesion call: a shared util would force every domain module
+// to import it (new dependency surface), trading a 10-line copy for a
+// shared symbol. Inline cost wins.
+
+/**
+ * Parse a `YYYY-MM-DD` filter string as the START of that day in Bogotá
+ * (00:00:00 COT == 05:00:00 UTC). Returns `-Infinity` if the string is
+ * missing or unparseable so callers can use `>=` without special-casing.
+ *
+ * We deliberately do NOT use `new Date(s)` because that interprets
+ * `'2026-04-27'` as midnight UTC (= 19:00 the previous day in Bogotá),
+ * silent off-by-one for every range filter.
+ */
+function startOfDayBogotaTimestamp(s: string | undefined): number {
+  if (!s) return Number.NEGATIVE_INFINITY;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return Number.NEGATIVE_INFINITY;
+  // Bogotá is UTC-5 with no DST. 00:00 in Bogotá == 05:00 UTC.
+  const t = Date.parse(`${s}T00:00:00-05:00`);
+  return Number.isNaN(t) ? Number.NEGATIVE_INFINITY : t;
+}
+
+/**
+ * Parse a `YYYY-MM-DD` filter string as the END of that day in Bogotá
+ * (23:59:59.999 COT). Returns `+Infinity` if missing/unparseable. The
+ * "end of day" semantic matters: `to=2026-04-29` should include a tx
+ * stamped at 22:00 on the 29th.
+ */
+function endOfDayBogotaTimestamp(s: string | undefined): number {
+  if (!s) return Number.POSITIVE_INFINITY;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return Number.POSITIVE_INFINITY;
+  const t = Date.parse(`${s}T23:59:59.999-05:00`);
+  return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+}
 
 // --- Predicates -------------------------------------------------------------
 
@@ -306,5 +335,344 @@ export function aggregateClienteBenchmark(
     clienteSampleSize: clienteCount,
     platformSampleSize: platformCount,
   };
+}
+
+// ============================================================================
+// P2P aggregation (CLI-V2-04)
+// ============================================================================
+
+/** One row of the P2P transactions table for the cliente dossier (CLI-V2-04). */
+export interface ClienteP2PRow {
+  /** Date of the P2P transaction. */
+  fecha: Date;
+  /** "in" (received by tikintag) or "out" (sent by tikintag). */
+  direction: "in" | "out";
+  /** Counterparty tikintag (sourceTransferTikintag when direction=in; destinationTransferTikintag when direction=out). undefined if Sheet cell empty. */
+  contraparte: string | undefined;
+  /** Monto in COP, signed per the underlying tx (direction=in is positive, direction=out is negative — UI takes Math.abs for display). */
+  monto: number;
+  /** Tx status (completed/rejected/etc). */
+  status: string;
+}
+
+/**
+ * P2P split + table for the cliente dossier (CLI-V2-04).
+ *
+ * Counts and montos count COMPLETED rows only (rejected P2Ps don't count
+ * towards "actividad real"). The `rows` array carries ALL in-window P2Ps
+ * regardless of status — completed AND rejected are both worth showing in
+ * the dossier table (the user wants to see attempted-but-failed transfers).
+ */
+export interface ClienteP2P {
+  /** Count of P2P direction=in completed transactions for tikintag. */
+  countIn: number;
+  /** Count of P2P direction=out completed transactions for tikintag. */
+  countOut: number;
+  /** Sum of monto for direction=in (positive). */
+  montoIn: number;
+  /** Absolute sum of monto for direction=out (positive — Math.abs applied). */
+  montoOut: number;
+  /** Last 50 P2P rows (any direction, any status), date DESC. Cap prevents pathological renders if a tikintag has thousands of P2Ps. */
+  rows: ClienteP2PRow[];
+}
+
+/**
+ * Compute P2P aggregations for a single tikintag in the filter window
+ * (CLI-V2-04).
+ *
+ * Filter pipeline:
+ *   1. `t.tipo === "P2P"` AND `t.empresa_id === tikintag` AND in Bogotá
+ *      window from `filters.from`/`filters.to` (inclusive ends).
+ *   2. Counters (`countIn`/`countOut`/`montoIn`/`montoOut`) honor
+ *      `filters.status` CSV with default `["completed"]`. A rejected P2P
+ *      attempt didn't actually move money so it shouldn't bloat the
+ *      "envío/recepción" KPIs.
+ *   3. `rows` array carries ALL in-window P2Ps regardless of status — the
+ *      table-level view of the dossier shows attempted+failed transfers
+ *      for operator visibility (the v2 dossier's value-prop is "see
+ *      everything about this client"). Cap at 50 rows (pathologically
+ *      heavy P2P users could otherwise bloat the page render).
+ *
+ * Direction → counterparty mapping:
+ *   - `direction === "in"`  → counterparty = `t.sourceTransferTikintag`
+ *     (the SENDER who pushed money to this user).
+ *   - `direction === "out"` → counterparty = `t.destinationTransferTikintag`
+ *     (the RECEIVER this user pushed money to).
+ *   - undefined when the source-row's transfer-tikintag cell is empty;
+ *     the UI renders `—` in that case.
+ *
+ * `filters.tipo` is INTENTIONALLY ignored here — this aggregation is
+ * P2P-by-definition (consistent with `filterBonosV2` BONUS-by-def,
+ * `filterPayoutsV2` PAYOUT-by-def, `filterPurchases` PURCHASE-by-def).
+ *
+ * Pure. Empty input → `{ countIn: 0, countOut: 0, montoIn: 0, montoOut: 0,
+ * rows: [] }`. Never NaN.
+ *
+ * @example
+ *   aggregateClienteP2P(allTx, "$mario", { from: "2026-04-01", to: "2026-04-30" })
+ *   // → { countIn: 5, countOut: 3, montoIn: 250000, montoOut: 180000,
+ *   //     rows: [
+ *   //       { fecha: <Date>, direction: "in",  contraparte: "$ana",   monto: 100000, status: "completed" },
+ *   //       { fecha: <Date>, direction: "out", contraparte: "$pedro", monto: -50000, status: "completed" },
+ *   //       ...
+ *   //     ] }
+ */
+export function aggregateClienteP2P(
+  transactions: Transaction[],
+  tikintag: string,
+  filters: DashboardFilters,
+): ClienteP2P {
+  const fromTs = startOfDayBogotaTimestamp(filters.from);
+  const toTs = endOfDayBogotaTimestamp(filters.to);
+  const counterStatusSet =
+    filters.status && filters.status.length > 0
+      ? new Set<string>(filters.status)
+      : new Set<string>(["completed"]);
+
+  let countIn = 0;
+  let countOut = 0;
+  let montoIn = 0;
+  let montoOut = 0;
+  const rows: ClienteP2PRow[] = [];
+
+  for (const t of transactions) {
+    if (t.tipo !== "P2P") continue;
+    if (t.empresa_id !== tikintag) continue;
+
+    const ts = t.fecha.getTime();
+    if (!Number.isFinite(ts)) continue;
+    if (ts < fromTs || ts > toTs) continue;
+
+    // Determine direction class. Schema may carry "OTRO_DIRECTION"
+    // defensively; a P2P with that direction can't be classified for the
+    // KPI splits but we still surface the row in the table.
+    const isIn = t.direction === "in";
+    const isOut = t.direction === "out";
+
+    // Row collection (ALL statuses).
+    if (isIn || isOut) {
+      const contraparte = isIn
+        ? t.sourceTransferTikintag
+        : t.destinationTransferTikintag;
+      rows.push({
+        fecha: t.fecha,
+        direction: isIn ? "in" : "out",
+        contraparte,
+        monto: t.monto,
+        status: t.status,
+      });
+    }
+
+    // Counter accumulation: status-filtered (default completed).
+    if (counterStatusSet.has(t.status)) {
+      if (isIn) {
+        countIn += 1;
+        montoIn += t.monto;
+      } else if (isOut) {
+        countOut += 1;
+        montoOut += Math.abs(t.monto);
+      }
+    }
+  }
+
+  // Sort rows by fecha DESC; cap at 50.
+  rows.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+  const cappedRows = rows.length > 50 ? rows.slice(0, 50) : rows;
+
+  return {
+    countIn,
+    countOut,
+    montoIn,
+    montoOut,
+    rows: cappedRows,
+  };
+}
+
+// ============================================================================
+// Timeline aggregation (CLI-V2-05 / CLI-V2-08)
+// ============================================================================
+
+/**
+ * Bucketed event types for the chronological timeline (CLI-V2-05).
+ *
+ * The UI (Plan 09-02 `TimelineActivity.tsx`) maps each value to an icon
+ * + color per the v2.0 design palette. `OTRO` is a defensive fallback so
+ * unrecognized future tipos surface in the timeline rather than silently
+ * disappearing — same convention as the `OTRO`/`OTRO_STATUS`/`OTRO_DIRECTION`
+ * fallbacks throughout the schema layer.
+ */
+export type ClienteTimelineEventType =
+  | "BONUS_IN"
+  | "BONUS_OUT"
+  | "P2P_IN"
+  | "P2P_OUT"
+  | "PURCHASE"
+  | "RECHARGE_PSE"
+  | "RECHARGE_TRANSFER"
+  | "PAYOUT_BANK"
+  | "OTRO";
+
+/** One event in the cliente's chronological timeline (CLI-V2-05). */
+export interface ClienteTimelineEvent {
+  /** Stable id for React keys. transaction_id when sourced from Transaction; payout transactionId when sourced from Payout. */
+  id: string;
+  /** Bucketed event type for icon/color rendering. */
+  type: ClienteTimelineEventType;
+  /** Event date (Bogotá-anchored timestamp). */
+  fecha: Date;
+  /** Display monto in COP (always positive — direction encoded in `type`). 0 when monto absent. */
+  monto: number;
+  /** Counterparty / destination label. Bonos+P2P → tikintag of peer; Payouts → bank `medium`; Purchases → empresa_nombre; PAYINs → method ("PSE" / "Transfer"). */
+  counterparty: string | undefined;
+  /** Transaction status pass-through ("completed" / "rejected" / payout state for PAYOUT_BANK). */
+  status: string;
+}
+
+/**
+ * Classify a Transaction row to its timeline event type. Pure helper for
+ * `aggregateClienteTimeline` — encapsulates the tipo → ClienteTimelineEventType
+ * mapping so the main loop stays flat.
+ */
+function classifyTransactionEvent(t: Transaction): ClienteTimelineEventType {
+  switch (t.tipo) {
+    case "BONUS":
+      if (t.direction === "in") return "BONUS_IN";
+      if (t.direction === "out") return "BONUS_OUT";
+      return "OTRO";
+    case "P2P":
+      if (t.direction === "in") return "P2P_IN";
+      if (t.direction === "out") return "P2P_OUT";
+      return "OTRO";
+    case "PURCHASE":
+      return "PURCHASE";
+    case "PAYIN_PSE":
+      return "RECHARGE_PSE";
+    case "PAYIN_TRANSFER":
+      return "RECHARGE_TRANSFER";
+    default:
+      return "OTRO";
+  }
+}
+
+/**
+ * Derive counterparty label for a Transaction-sourced timeline event.
+ * Centralizes the per-tipo label rule so the main loop stays flat.
+ */
+function counterpartyForTransaction(
+  t: Transaction,
+  type: ClienteTimelineEventType,
+): string | undefined {
+  switch (type) {
+    case "BONUS_IN":
+    case "P2P_IN":
+      return t.sourceTransferTikintag;
+    case "BONUS_OUT":
+    case "P2P_OUT":
+      return t.destinationTransferTikintag;
+    case "PURCHASE":
+      // Phase 2 default: empresa_nombre === tikintag (the merchant). Phase
+      // 9+ may evolve this when BD_Plataforma surfaces a true merchant col.
+      return t.empresa_nombre || undefined;
+    case "RECHARGE_PSE":
+      return "PSE";
+    case "RECHARGE_TRANSFER":
+      return "Transfer";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Build the chronological timeline of activity events for a single
+ * tikintag (CLI-V2-05). Merges two sources:
+ *
+ *   1. **Transaction events** — every `transactions` row whose
+ *      `empresa_id === tikintag` and falls in the Bogotá window.
+ *      Mapped by tipo+direction to a `ClienteTimelineEventType`.
+ *   2. **Payout events** — every `joinedPayouts` row whose joined
+ *      `transaction.empresa_id === tikintag`. Always classified as
+ *      `PAYOUT_BANK` (the only tipo in BD_Payouts). counterparty =
+ *      `p.medium` (bank code), status = `p.state`.
+ *
+ * The merged stream is sorted by `fecha.getTime()` DESCENDING and capped at
+ * 200 events. UI (Plan 09-02 TimelineActivity.tsx) renders all items the
+ * domain emits — no client-side pagination, the cap is the only pagination.
+ *
+ * `monto` is always returned positive (`Math.abs(t.monto || 0)` /
+ * `Math.abs(p.monto || 0)`). The DIRECTION semantic is encoded in `type`
+ * (BONUS_IN vs BONUS_OUT) — the leaf renders "+/-" prefixes based on
+ * type, not on a signed monto.
+ *
+ * `filters.status` and `filters.tipo` are INTENTIONALLY ignored: the
+ * timeline is a "show everything that happened" view; status badges are
+ * rendered per row from `event.status`. Filtering by status would defeat
+ * the timeline's purpose (operator wants to see WHY a payout failed —
+ * filtering out failed payouts hides the very thing they're investigating).
+ *
+ * Pure. Empty inputs → `[]`. O(n + m) where n = transactions, m = payouts.
+ *
+ * @example
+ *   aggregateClienteTimeline(allTx, joinedPayouts, "$mario",
+ *                            { from: "2026-04-01", to: "2026-04-30" })
+ *   // → [
+ *   //     { id: "tx_847", type: "BONUS_IN",    fecha: <Date 2026-04-29>, monto: 50000,  counterparty: "$ana",        status: "completed" },
+ *   //     { id: "tx_812", type: "PURCHASE",    fecha: <Date 2026-04-25>, monto: 12500,  counterparty: "Pollos Mario", status: "completed" },
+ *   //     { id: "po_113", type: "PAYOUT_BANK", fecha: <Date 2026-04-20>, monto: 200000, counterparty: "bancolombia", status: "completed" },
+ *   //   ]
+ */
+export function aggregateClienteTimeline(
+  transactions: Transaction[],
+  joinedPayouts: JoinedPayout[],
+  tikintag: string,
+  filters: DashboardFilters,
+): ClienteTimelineEvent[] {
+  const fromTs = startOfDayBogotaTimestamp(filters.from);
+  const toTs = endOfDayBogotaTimestamp(filters.to);
+  const events: ClienteTimelineEvent[] = [];
+
+  // Source 1: Transaction rows attributable to tikintag.
+  for (const t of transactions) {
+    if (t.empresa_id !== tikintag) continue;
+    const ts = t.fecha.getTime();
+    if (!Number.isFinite(ts)) continue;
+    if (ts < fromTs || ts > toTs) continue;
+
+    const type = classifyTransactionEvent(t);
+    const counterparty = counterpartyForTransaction(t, type);
+    const monto = Math.abs(Number.isFinite(t.monto) ? t.monto : 0);
+
+    events.push({
+      id: t.id,
+      type,
+      fecha: t.fecha,
+      monto,
+      counterparty,
+      status: t.status,
+    });
+  }
+
+  // Source 2: Payout rows joined to tikintag.
+  for (const p of joinedPayouts) {
+    if (p.transaction?.empresa_id !== tikintag) continue;
+    const ts = p.fecha.getTime();
+    if (!Number.isFinite(ts)) continue;
+    if (ts < fromTs || ts > toTs) continue;
+
+    const monto = Math.abs(Number.isFinite(p.monto) ? p.monto : 0);
+
+    events.push({
+      id: p.transactionId,
+      type: "PAYOUT_BANK",
+      fecha: p.fecha,
+      monto,
+      counterparty: p.medium || undefined,
+      status: p.state,
+    });
+  }
+
+  // Sort DESC by date; cap at 200 events (defensive — pathological cases
+  // where a single tikintag has thousands of events in window).
+  events.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+  return events.length > 200 ? events.slice(0, 200) : events;
 }
 
