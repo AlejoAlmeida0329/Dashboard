@@ -27,7 +27,9 @@
  *   — is the only public surface.
  */
 
-import { toBogotaISODate } from "@/lib/format";
+import { formatInTimeZone } from "date-fns-tz";
+
+import { BOGOTA_TZ, toBogotaISODate } from "@/lib/format";
 import type { DashboardFilters } from "@/lib/url-state";
 
 import type { Transaction } from "./types";
@@ -238,6 +240,34 @@ export function aggregateBonosByDateV2(bonos: Transaction[]): BonoByDateV2[] {
     }
   }
   return Array.from(byDay.values()).sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
+}
+
+/**
+ * Same shape as `aggregateBonosByDateV2` but bucket = Bogotá calendar
+ * month (`YYYY-MM`). Used by /bonos when the requested range spans more
+ * than 60 days — daily granularity becomes noisy and the operative
+ * read-out is "qué meses pagamos más bonos".
+ */
+export function aggregateBonosByMonthV2(bonos: Transaction[]): BonoByDateV2[] {
+  const byMonth = new Map<string, BonoByDateV2>();
+  for (const b of bonos) {
+    const date = formatInTimeZone(b.fecha, BOGOTA_TZ, "yyyy-MM");
+    let cur = byMonth.get(date);
+    if (!cur) {
+      cur = { date, countIn: 0, countOut: 0, montoIn: 0, montoOut: 0 };
+      byMonth.set(date, cur);
+    }
+    if (b.direction === "in") {
+      cur.countIn += 1;
+      cur.montoIn += b.monto;
+    } else if (b.direction === "out") {
+      cur.countOut += 1;
+      cur.montoOut += b.monto;
+    }
+  }
+  return Array.from(byMonth.values()).sort((a, b) =>
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   );
 }

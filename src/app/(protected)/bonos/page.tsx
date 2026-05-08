@@ -17,6 +17,8 @@
  *   3. TopEmisores ranking (PROTAGONIST)
  */
 
+import { differenceInCalendarDays } from "date-fns";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { BonosFlowChart } from "@/components/bonos/BonosFlowChart";
@@ -25,6 +27,7 @@ import { TopEmisores } from "@/components/bonos/TopEmisores";
 
 import {
   aggregateBonosByDateV2,
+  aggregateBonosByMonthV2,
   aggregateTopEmisores,
   filterBonosV2,
   summarizeBonosV2,
@@ -88,7 +91,20 @@ export default async function BonosPage({ searchParams }: PageProps) {
     );
   }
 
-  const byDate = aggregateBonosByDateV2(bonos);
+  // Adaptive granularity: ≤60 days → daily; else monthly. With no
+  // explicit range the chart shows all-time data and goes monthly.
+  const rangeDays =
+    filters.from && filters.to
+      ? differenceInCalendarDays(
+          new Date(`${filters.to}T00:00:00-05:00`),
+          new Date(`${filters.from}T00:00:00-05:00`),
+        ) + 1
+      : Number.POSITIVE_INFINITY;
+  const granularity: "day" | "month" = rangeDays > 60 ? "month" : "day";
+  const byBucket =
+    granularity === "month"
+      ? aggregateBonosByMonthV2(bonos)
+      : aggregateBonosByDateV2(bonos);
   const topEmisores = aggregateTopEmisores(bonos, 10);
 
   return (
@@ -97,10 +113,15 @@ export default async function BonosPage({ searchParams }: PageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Flujo de bonos enviados</CardTitle>
+          <CardTitle>
+            Flujo de bonos enviados{" "}
+            <span className="text-sm font-normal text-muted-foreground">
+              ({granularity === "month" ? "mensual" : "diario"})
+            </span>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <BonosFlowChart data={byDate} />
+          <BonosFlowChart data={byBucket} />
         </CardContent>
       </Card>
 
