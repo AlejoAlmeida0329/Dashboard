@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
+  { id: "today", label: "Hoy" },
   { id: "7d", label: "7d" },
   { id: "30d", label: "30d" },
   { id: "mtd", label: "MTD" },

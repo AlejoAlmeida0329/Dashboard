@@ -45,7 +45,7 @@ export type DashboardFilters = {
   presenter?: "1"; // canonical "on" value — anything else means off
 };
 
-export type DateRangePreset = "7d" | "30d" | "mtd" | "qtd" | "ytd";
+export type DateRangePreset = "today" | "7d" | "30d" | "mtd" | "qtd" | "ytd";
 
 const getOne = (
   searchParams: Record<string, string | string[] | undefined>,
@@ -146,6 +146,8 @@ export function presetDateRange(preset: DateRangePreset): {
   const back = (days: number) => toBogotaISODate(subDays(new Date(), days));
 
   switch (preset) {
+    case "today":
+      return { from: today, to: today };
     case "7d":
       return { from: back(6), to: today };
     case "30d":
@@ -172,7 +174,7 @@ export function detectActivePreset(
   filters: Pick<DashboardFilters, "from" | "to">,
 ): DateRangePreset | null {
   if (!filters.from || !filters.to) return null;
-  const presets: DateRangePreset[] = ["7d", "30d", "mtd", "qtd", "ytd"];
+  const presets: DateRangePreset[] = ["today", "7d", "30d", "mtd", "qtd", "ytd"];
   for (const p of presets) {
     const r = presetDateRange(p);
     if (r.from === filters.from && r.to === filters.to) return p;
