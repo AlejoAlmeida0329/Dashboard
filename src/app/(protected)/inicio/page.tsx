@@ -103,7 +103,10 @@ import {
   filterInicioV2,
   summarizeInicioV2,
 } from "@/lib/domain/inicio";
-import { getCachedTransactions } from "@/lib/sheets/transactions";
+import {
+  getCachedAllTikintags,
+  getCachedTransactions,
+} from "@/lib/sheets/transactions";
 import { parseFilters } from "@/lib/url-state";
 
 export const metadata = {
@@ -123,8 +126,12 @@ export default async function InicioPage({ searchParams }: PageProps) {
   const filters = parseFilters(params);
 
   let txResult;
+  let usuariosTotalPool: number;
   try {
-    txResult = await getCachedTransactions();
+    [txResult, usuariosTotalPool] = await Promise.all([
+      getCachedTransactions(),
+      getCachedAllTikintags(),
+    ]);
   } catch (err) {
     return (
       <Card>
@@ -158,11 +165,11 @@ export default async function InicioPage({ searchParams }: PageProps) {
       : 30;
   const granularity: "day" | "week" = length > 60 ? "week" : "day";
 
-  // summarizeInicioV2 takes BOTH the filtered rows (period-scoped counters)
-  // AND the full transaction pool (for the `usuariosTotal` denominator —
-  // the "alcance histórico" 235 baseline used in the leaf KPI's "X / Y
-  // usuarios totales" caption). Plan 10-04 fix.
-  const summary = summarizeInicioV2(inicioRows, allTx);
+  // `usuariosTotalPool` is fetched via getCachedAllTikintags — a raw column
+  // read that bypasses Zod. Two tikintags only appear in rows the schema
+  // rejects (empty transaction_id), so the post-Zod `allTx` undercounts the
+  // baseline by 2. The raw read returns the canonical 235 alcance histórico.
+  const summary = summarizeInicioV2(inicioRows, usuariosTotalPool);
   const tipoDistribution = aggregateTransactionTypeDistribution(inicioRows, 6);
   const activitySeries =
     granularity === "week"

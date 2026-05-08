@@ -302,12 +302,17 @@ export function filterInicioV2(
 // --- v2 KPI summary ---------------------------------------------------------
 
 /**
- * Compute the v2 Inicio headline KPIs from the FILTERED list and the FULL
- * transaction pool (INI-V2-01 + INI-V2-02).
+ * Compute the v2 Inicio headline KPIs from the FILTERED list (INI-V2-01 +
+ * INI-V2-02).
  *
- * Plan 10-04 fix:
- *   - Two-input signature: `filteredRows` for the period-scoped counters
- *     and `allTx` for the full-pool denominator (`usuariosTotal`).
+ * Why `usuariosTotal` is injected from the caller (not derived here):
+ *   `allTx` (post-Zod) is missing 2 tikintags that only appear in rows
+ *   rejected by the schema (empty `transaction_id`). The user-facing
+ *   "alcance histórico" baseline is 235 distinct values in column A of
+ *   BD_Plataforma; computing from `allTx` returns 233. The caller fetches
+ *   the canonical pool size via `getCachedAllTikintags()` (a raw column
+ *   read that bypasses Zod) and passes the number through.
+ *
  *   - Counters are over CANONICAL EVENT rows — bidirectional types
  *     (BONUS / P2P / PURCHASE) count once on the OUT side.
  *   - Volumen sums restricted to `status === 'completed'` (rejected ≠
@@ -319,14 +324,12 @@ export function filterInicioV2(
  *     `status='completed'`. BD_Plataforma stores OUT montos as negative;
  *     `Math.abs` recovers the gross value.
  *
- * Single-pass reduce over `filteredRows`; second short loop over `allTx`
- * for the full-pool tikintag count.
- *
- * Pure. Empty inputs → all zeros, `successRate: 0`.
+ * Single-pass reduce over `filteredRows`. Pure. Empty inputs → all zeros,
+ * `successRate: 0`.
  */
 export function summarizeInicioV2(
   filteredRows: Transaction[],
-  allTx: Transaction[],
+  usuariosTotalPool: number,
 ): InicioSummaryV2 {
   let volumenIn = 0;
   let volumenOut = 0;
@@ -359,19 +362,9 @@ export function summarizeInicioV2(
   const total = countCompleted + countFailed + countInProgress;
   const successRate = total > 0 ? countCompleted / total : 0;
 
-  // Full-pool denominator — the "alcance histórico" 235 baseline.
-  // We exclude OTRO_DIRECTION rows here too (mirror filterInicioV2's
-  // defensive guard) so the denominator stays consistent with the rest of
-  // the v2 surface; in practice BD_Plataforma has no OTRO_DIRECTION rows.
-  const totalTikintagSet = new Set<string>();
-  for (const t of allTx) {
-    if (t.direction === "OTRO_DIRECTION") continue;
-    if (t.tikintag) totalTikintagSet.add(t.tikintag);
-  }
-
   return {
     usuariosActivos: filteredTikintagSet.size,
-    usuariosTotal: totalTikintagSet.size,
+    usuariosTotal: usuariosTotalPool,
     volumenIn,
     volumenOut,
     countCompleted,
