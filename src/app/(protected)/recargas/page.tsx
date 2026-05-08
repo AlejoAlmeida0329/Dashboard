@@ -1,80 +1,93 @@
 /**
- * Recargas page — Server Component composition for the Recargas tab.
+ * Recargas page — v2 method-and-distribution-first cockpit (Plan 08-04).
+ *
+ * Vision (08-CONTEXT.md essentials + REC-V2-01..08):
+ *   First scroll = how many recargas + how much $ entered (KPI strip with
+ *   Teal section accent on the primary metric). Second scroll = method
+ *   protagonists (PSE vs Transferencia split + amount distribution side by
+ *   side). Third scroll = top users by recharge volume. Fourth scroll =
+ *   stacked PSE/TRANSFER timeline. User who only reads the first scroll
+ *   already has a useful operational answer.
  *
  * Pipeline (per request):
- *   1. Read URL filters via `parseFilters(searchParams)` (Phase 1 contract).
- *   2. Compute the same-length immediately-prior window via
- *      `computePriorPeriod(filters)` (Plan 04-01). Returns `null` when the
- *      filter is unbounded — KPI badges fall back to em-dash in that case.
- *   3. Fetch transactions via `getCachedTransactions` — same call
+ *   1. Read URL filters via `parseFilters(searchParams)` (Plan 06-03 contract).
+ *   2. Fetch transactions via `getCachedTransactions` — same call
  *      `DashboardHeader` makes. React `cache()` dedupes the Sheets API
  *      roundtrip so chrome and page share a single fetch per request.
- *   4. Apply `filterRecargas` (Plan 04-03). The RECHARGE_TIPOS guard lives
- *      INSIDE the domain layer — the page never branches on tipo strings.
- *      Run it twice over the same `allTx`: once for the current window,
- *      once for the prior window. Single Sheets read, dual filter pass.
- *   5. Run zero-safe aggregations: `summarizeRecargas` (2 KPIs),
- *      `aggregateRecargasByDate` (chart series), `aggregateRecargasByEmpresa`
- *      + `top10RecargasEmpresas` (table top-10), and the two hechos
- *      curados (`findTopEmpresaRecargadora`, `findRecargaMasGrande`).
- *   6. Render KPICards + TrendChart + Table + HechosCuradosRecargas. All
- *      Plan 04-06 leaves; the page itself stays prop-only.
+ *   3. Apply `filterRecargasV2` (Plan 08-03): PAYIN_PSE + PAYIN_TRANSFER +
+ *      direction='in' + status CSV (default `["completed"]`) + Bogotá from/to
+ *      + optional empresa. ONE filter pass feeds all six aggregations below.
+ *   4. Run six v2 aggregations:
+ *        - `summarizeRecargasV2`              → 4-card KPI header
+ *        - `aggregateRechargeAdoption`        → adoption % (REC-V2-03)
+ *        - `aggregateRechargeMethodSplit`     → PSE/Transfer split (REC-V2-04)
+ *        - `aggregateRechargeAmountDistribution` → 3 buckets (REC-V2-06)
+ *        - `aggregateTopRechargers`           → top 10 by tikintag (REC-V2-07)
+ *        - `aggregateRechargesByDateV2`       → stacked timeline points
+ *   5. Render the cockpit per layout below. All 5 leaves are Plan 08-04
+ *      Server Components except RecargasTrendChartV2 (Recharts requires DOM).
  *
- * Why simpler than `/inicio`:
- *   - 2 KPIs (no comisión / take rate equivalents) → no presenter-only
- *     metric to hide. `?presenter=1` alone behaves identical to default.
- *   - 1 chart only (recargas by date) → no granularity switch needed; the
- *     domain emits daily buckets and the chart renders them as bars.
- *   - 2 hechos curados (vs Inicio's 3) → no payouts cross-fetch needed.
+ * Adoption denominator decision (mirrors Plan 08-02):
+ *   `aggregateRechargeAdoption` is called with the FULL `allTx` (NOT a
+ *   period-filtered subset). Same convention as Plan 08-02's
+ *   `aggregatePurchaseAdoption` call. The denominator is the population of
+ *   all known users in the platform; period scoping applies only to the
+ *   numerator (`recargaRows`). A period-filtered denominator would conflate
+ *   "user existed in the period" with "user adopted the feature in the
+ *   period" — confusing for an adoption KPI.
  *
- * Cliente-foco contract delegation:
- *   Visibility flips for `?presenter=1&empresa=$X` are 100% CSS-driven,
- *   handled inside the leaves (Plan 04-06):
- *     - `HechosCuradosRecargas` wrapper: `data-presenter-empresa-hide`
- *       (component internal — page wires no attribute).
- *     - KPIs, chart, and table stay visible — cliente seeing their own
- *       totals + trend + ranking row is desired (RESEARCH cliente-foco
- *       definition: "show the client what's about THEM").
- *   No React conditionals on presenter / empresa here.
+ * Removed from v1:
+ *   - `computePriorPeriod` + prior-period KPI badges. v2 KPIs are stand-alone
+ *     (PRD lens shift: REC-V2 omits the period-vs-period badge concept).
+ *   - `findTopEmpresaRecargadora` / `findRecargaMasGrande` hechos curados.
+ *     v2 is user-and-method-and-amount-centric, NOT empresa-centric.
  *
- * Empty-state behavior:
- *   Mirror `bonos/page.tsx`. When `currentRecargas.length === 0`, KPICards
- *   still renders zero values (zero-safe), the chart Card shows the "Sin
- *   datos" copy, the table shows its own empty-state, and HechosCurados
- *   show their respective "sin recargas" sentences. NO short-circuit with a
- *   single empty Card — preserves layout consistency, reads as "your
- *   filter excluded everything", not "the dashboard is broken".
+ * Cliente-foco contract:
+ *   NO `data-presenter-*` attributes here per Plan 08-04 conservative-default
+ *   policy (CROSS-V2-07). The page metric set is intentionally non-sensitive
+ *   for empresa-foco mode (each user already sees their own slice via the
+ *   `?empresa=$X` URL filter; no per-metric hides needed). Phase 9 may
+ *   revisit if a CLI-V2 requirement covers Recargas presenter behavior.
  *
  * Rendering rules:
  *   - `dynamic = 'force-dynamic'` — fresh per-request Sheets read per
  *     PROJECT.md "lectura en vivo en cada carga".
  *   - `searchParams` is a `Promise<...>` per Next 16's signature change.
- *   - `verifySession()` is NOT called here — the `(protected)` route
- *     group's layout already guards the entire subtree.
+ *   - `verifySession()` is NOT called here — the `(protected)` route group's
+ *     layout already guards the entire subtree.
  *
- * Error handling:
+ * Error and empty handling:
  *   - If `getCachedTransactions()` throws (creds missing, schema drift,
- *     transient 429), we render an inline `<Card>` with the underlying
- *     error message rather than letting the route group's `error.tsx`
- *     swallow it with a generic copy. Mirror of bonos + payouts + inicio.
+ *     transient 429), we render an inline Card with the underlying error
+ *     message rather than letting the route group's `error.tsx` swallow it.
+ *   - If the filtered universe is empty, each leaf renders its own
+ *     zero-state placeholder. The page does NOT short-circuit — preserves
+ *     layout consistency, reads as "your filter excluded everything", not
+ *     "the dashboard is broken".
+ *
+ * Layout (responsive):
+ *   - Mobile: everything stacked, `space-y-6`.
+ *   - Desktop: KPI strip 1 → 2 → 4 cols (managed inside RecargasKPICardsV2);
+ *     MethodSplitCard | AmountDistribution at `lg:grid-cols-2`;
+ *     TopRechargers + TrendChart full-width.
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { HechosCuradosRecargas } from "@/components/recargas/HechosCuradosRecargas";
-import { RecargasKPICards } from "@/components/recargas/RecargasKPICards";
-import { RecargasTable } from "@/components/recargas/RecargasTable";
-import { RecargasTrendChart } from "@/components/recargas/RecargasTrendChart";
+import { AmountDistribution } from "@/components/recargas/AmountDistribution";
+import { MethodSplitCard } from "@/components/recargas/MethodSplitCard";
+import { RecargasKPICardsV2 } from "@/components/recargas/RecargasKPICardsV2";
+import { RecargasTrendChartV2 } from "@/components/recargas/RecargasTrendChartV2";
+import { TopRechargers } from "@/components/recargas/TopRechargers";
 
-import { computePriorPeriod } from "@/lib/domain/period";
 import {
-  aggregateRecargasByDate,
-  aggregateRecargasByEmpresa,
-  filterRecargas,
-  findRecargaMasGrande,
-  findTopEmpresaRecargadora,
-  summarizeRecargas,
-  top10RecargasEmpresas,
+  aggregateRechargeAdoption,
+  aggregateRechargeAmountDistribution,
+  aggregateRechargeMethodSplit,
+  aggregateRechargesByDateV2,
+  aggregateTopRechargers,
+  filterRecargasV2,
+  summarizeRecargasV2,
 } from "@/lib/domain/recargas";
 import { getCachedTransactions } from "@/lib/sheets/transactions";
 import { parseFilters } from "@/lib/url-state";
@@ -94,7 +107,6 @@ type PageProps = {
 export default async function RecargasPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const filters = parseFilters(params);
-  const priorWindow = computePriorPeriod(filters);
 
   let txResult;
   try {
@@ -118,58 +130,56 @@ export default async function RecargasPage({ searchParams }: PageProps) {
 
   const allTx = txResult.rows;
 
-  // Current period (filtered to RECHARGE_TIPOS by the domain layer).
-  const currentRecargas = filterRecargas(allTx, filters);
+  // ONE filter pass feeds all six aggregations.
+  const recargaRows = filterRecargasV2(allTx, filters);
 
-  // Prior period: same allTx, different window. Null when filters lack
-  // from/to (unbounded comparisons aren't meaningful → KPI badges → em-dash).
-  const priorRecargas = priorWindow
-    ? filterRecargas(allTx, {
-        ...filters,
-        from: priorWindow.from,
-        to: priorWindow.to,
-      })
-    : null;
-
-  const summary = {
-    current: summarizeRecargas(currentRecargas),
-    prior: priorRecargas ? summarizeRecargas(priorRecargas) : null,
-  };
-
-  const trendData = aggregateRecargasByDate(currentRecargas);
-  const byEmpresa = aggregateRecargasByEmpresa(currentRecargas);
-  const top10 = top10RecargasEmpresas(byEmpresa);
-
-  // Hechos curados: both operate on the current-window data; they're
-  // intentionally null-safe so the leaf can render its own empty-state copy.
-  const topEmpresa = findTopEmpresaRecargadora(byEmpresa);
-  const recargaMasGrande = findRecargaMasGrande(currentRecargas);
+  const summary = summarizeRecargasV2(recargaRows);
+  // Adoption denominator = full allTx pool (NOT period-filtered) — same
+  // decision as Plan 08-02's `aggregatePurchaseAdoption` call.
+  const adoption = aggregateRechargeAdoption(allTx, recargaRows);
+  const methodSplit = aggregateRechargeMethodSplit(recargaRows);
+  const amountBuckets = aggregateRechargeAmountDistribution(recargaRows);
+  const topRows = aggregateTopRechargers(recargaRows, 10);
+  const trendData = aggregateRechargesByDateV2(recargaRows);
 
   return (
     <div className="space-y-6">
-      <RecargasKPICards summary={summary} />
+      <header>
+        <h1 className="font-heading text-2xl">Recargas</h1>
+        <p className="text-sm text-muted-foreground">
+          PSE + Transferencia · entradas a la plataforma
+        </p>
+      </header>
 
+      {/* KPI strip — 4 cards: total + volumen + adopción + recarga promedio.
+          Section accent (text-section-recargas) on the primary metric only. */}
+      <RecargasKPICardsV2 summary={summary} adoption={adoption} />
+
+      {/* Diagnostic protagonists — PSE vs Transferencia | distribución por monto. */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <MethodSplitCard split={methodSplit} />
+        <AmountDistribution buckets={amountBuckets} />
+      </div>
+
+      {/* Top rechargers ranking — by tikintag (NOT empresa per REC-V2-07). */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Top 10 usuarios por volumen recargado</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TopRechargers rows={topRows} />
+        </CardContent>
+      </Card>
+
+      {/* Stacked PSE/TRANSFER timeline — context below the rankings. */}
       <Card>
         <CardHeader>
           <CardTitle>Recargas en el tiempo</CardTitle>
         </CardHeader>
         <CardContent>
-          {trendData.length < 2 ? (
-            <p className="text-sm text-muted-foreground">
-              Sin datos suficientes para tendencia. Ampliá el período.
-            </p>
-          ) : (
-            <RecargasTrendChart data={trendData} />
-          )}
+          <RecargasTrendChartV2 data={trendData} />
         </CardContent>
       </Card>
-
-      <RecargasTable rows={top10} />
-
-      <HechosCuradosRecargas
-        topEmpresa={topEmpresa}
-        recargaMasGrande={recargaMasGrande}
-      />
     </div>
   );
 }
