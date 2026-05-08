@@ -42,7 +42,7 @@
 import type { DashboardFilters } from "@/lib/url-state";
 
 import type { JoinedPayout } from "./join";
-import type { Payout, PayoutState } from "./types";
+import type { Payout, PayoutState, Transaction } from "./types";
 
 // --- Date parse helpers -----------------------------------------------------
 
@@ -591,6 +591,115 @@ export function aggregateThirdPartyPayouts(
   }
   out.sort((a, b) => b.monto - a.monto);
   return out;
+}
+
+// === Tiempo promedio de payouts por empresa pagadora de bonos =============
+
+/**
+ * One row of the payout-time-by-empresa report.
+ *
+ * "Empresa" = the empresa that pays bonos to a given user (most-frequent
+ * BONUS-in `sourceTransferTikintag` per recipient — same primary-payer
+ * mapping used by /inicio TopUsersByVolume).
+ */
+export interface PayoutTimeByEmpresaRow {
+  /** Empresa pagadora de bonos (a tikintag like `$skala`). */
+  empresa: string;
+  /** Number of completed payouts whose initiator's primary bono payer is this empresa. */
+  count: number;
+  /** Average completion time in MINUTES across those completed payouts. */
+  avgMinutes: number;
+}
+
+/**
+ * Compute average payout completion time grouped by empresa pagadora de
+ * bonos.
+ *
+ * Steps:
+ *   1. Build `primaryBonoPayer` map from BONUS-in rows in `transactions`
+ *      — for each receiver tikintag, the most-frequent
+ *      `sourceTransferTikintag`.
+ *   2. For each joined payout that is `completed` AND has a matched
+ *      transaction, look up the initiator's primary empresa pagadora.
+ *      Payouts whose initiator never received a bono are skipped (we
+ *      can't attribute them).
+ *   3. Group by empresa: accumulate count + sum of latencySeconds.
+ *   4. Compute avg minutes per empresa. Sort DESC by count; tiebreak
+ *      ASC by avgMinutes (fastest among same-count empresas wins).
+ *
+ * Returns: empresa rows sorted DESC by count.
+ *
+ * Pure. O(t + p + e log e) where t = transactions, p = joined payouts,
+ * e = distinct empresas.
+ */
+export function aggregatePayoutTimeByEmpresa(
+  transactions: Transaction[],
+  joined: JoinedPayout[],
+): PayoutTimeByEmpresaRow[] {
+  // 1. Primary bono payer per recipient.
+  const bonoPayerCounts = new Map<string, Map<string, number>>();
+  for (const t of transactions) {
+    if (t.tipo !== "BONUS") continue;
+    if (t.direction !== "in") continue;
+    if (!t.tikintag) continue;
+    const payer = t.sourceTransferTikintag;
+    if (!payer) continue;
+    let inner = bonoPayerCounts.get(t.tikintag);
+    if (!inner) {
+      inner = new Map<string, number>();
+      bonoPayerCounts.set(t.tikintag, inner);
+    }
+    inner.set(payer, (inner.get(payer) ?? 0) + 1);
+  }
+  const primaryBonoPayer = new Map<string, string>();
+  for (const [receiver, inner] of bonoPayerCounts) {
+    let bestPayer: string | undefined;
+    let bestCount = -1;
+    for (const [payer, count] of inner) {
+      if (
+        count > bestCount ||
+        (count === bestCount && bestPayer !== undefined && payer < bestPayer)
+      ) {
+        bestPayer = payer;
+        bestCount = count;
+      }
+    }
+    if (bestPayer) primaryBonoPayer.set(receiver, bestPayer);
+  }
+
+  // 2-3. Group completed payouts by attributed empresa.
+  const acc = new Map<string, { count: number; totalSeconds: number }>();
+  for (const j of joined) {
+    if (j.state !== "completed") continue;
+    if (!Number.isFinite(j.latencySeconds)) continue;
+    if (!j.transaction) continue;
+    const tikintag = j.transaction.tikintag;
+    if (!tikintag) continue;
+    const empresa = primaryBonoPayer.get(tikintag);
+    if (!empresa) continue;
+    let cur = acc.get(empresa);
+    if (!cur) {
+      cur = { count: 0, totalSeconds: 0 };
+      acc.set(empresa, cur);
+    }
+    cur.count += 1;
+    cur.totalSeconds += j.latencySeconds;
+  }
+
+  // 4. Build rows + sort.
+  const rows: PayoutTimeByEmpresaRow[] = Array.from(acc.entries()).map(
+    ([empresa, v]) => ({
+      empresa,
+      count: v.count,
+      avgMinutes: v.totalSeconds / v.count / 60,
+    }),
+  );
+  rows.sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    if (a.avgMinutes !== b.avgMinutes) return a.avgMinutes - b.avgMinutes;
+    return a.empresa < b.empresa ? -1 : a.empresa > b.empresa ? 1 : 0;
+  });
+  return rows;
 }
 
 // === Top usuarios que más retiros han hecho ================================

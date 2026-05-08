@@ -68,6 +68,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AgingAlert } from "@/components/payouts/AgingAlert";
 import { FailureReasons } from "@/components/payouts/FailureReasons";
 import { PayoutsKPICardsV2 } from "@/components/payouts/PayoutsKPICardsV2";
+import { PayoutTimeByEmpresa } from "@/components/payouts/PayoutTimeByEmpresa";
 import { StatusBreakdownCards } from "@/components/payouts/StatusBreakdownCards";
 import { TopBancos } from "@/components/payouts/TopBancos";
 import { TopRetirosBanco } from "@/components/payouts/TopRetirosBanco";
@@ -77,6 +78,7 @@ import {
   aggregateAgingAlertPending,
   aggregateAverageProcessingMinutes,
   aggregateFailureReasons,
+  aggregatePayoutTimeByEmpresa,
   aggregateThirdPartyPayouts,
   aggregateTopBancos,
   aggregateTopRetirosBanco,
@@ -169,6 +171,10 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
   const thirdParty = aggregateThirdPartyPayouts(joinedCompleted);
   const joinedPeriod = joinPayouts(txResult.rows, periodOnly);
   const topRetiros = aggregateTopRetirosBanco(joinedPeriod, 20);
+  const payoutTimeByEmpresa = aggregatePayoutTimeByEmpresa(
+    txResult.rows,
+    joinedPeriod,
+  );
 
   // Empty-state branch: render the KPI header (with zeros) + a friendly
   // explanatory Card. Skip the diagnostic layer entirely — there's no
@@ -215,10 +221,11 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
       {/* Quality semáforo — 3 KPIs por estado. */}
       <StatusBreakdownCards breakdown={breakdown} />
 
-      {/* Diagnóstico — bancos | razones de fallo | top retiros. */}
+      {/* Diagnóstico — bancos | razones de fallo | top retiros | tiempo por empresa. */}
       <TopBancos data={topBancos} />
       <FailureReasons rows={failureRows} />
       <TopRetirosBanco rows={topRetiros} />
+      <PayoutTimeByEmpresa rows={payoutTimeByEmpresa} />
     </div>
   );
 }
