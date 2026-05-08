@@ -1,47 +1,24 @@
 /**
- * TopUsersByVolume — top 10 users by volumen OUT (INI-V2-06, Plan 10-04).
+ * TopUsersByVolume — top 10 users by volumen OUT (INI-V2-06).
  *
- * Server Component. Raw `<table>` markup (no shadcn `ui/table` primitive
- * exists in repo — same convention as Plan 07-02's TopEmisores /
- * TopReceptores, Plan 08's TopRechargers / TopCardUsers). The wrapping
- * Card chrome is provided by the page (inicio/page.tsx); this leaf only
- * renders the table body.
+ * Server Component. Raw `<table>` markup. Card chrome is provided by the
+ * page (inicio/page.tsx); this leaf renders only the table body.
  *
- * Plan 10-04 fix: ranking key changed from `volumenNeto` (volumenIn -
- * volumenOut, ambiguous semantic that surfaced "net receivers" at the top
- * and "net spenders" at the bottom) to `volumenOut` DESC. The operative-
- * lens framing answers "who moves the most money out of their Tikin
- * wallet?" (purchases + payouts + bonos sent + p2p sent) — the platform's
- * value-prop. Heavy spenders surface at the top.
+ * Ranking key: `volumenOut` DESC. Operative framing — "¿quién mueve más
+ * plata fuera de su wallet Tikin?" (PAYOUT_BANK + PURCHASE-out).
  *
  * Columns (left to right):
- *   1. `#`              — ranking index (1..N, 1-based)
- *   2. Tikintag         — user-level identifier (e.g. `$mario`); `font-mono`
- *                         for `$`-prefix legibility
- *   3. Empresa          — denormalized label (first observed
- *                         `empresa_nombre`); muted em-dash when undefined
- *   4. Tx               — count of canonical event rows for this user
- *                         (PAYIN_* + PAYOUT_BANK + bidirectional-OUT;
- *                         each event counts once)
- *   5. Volumen IN       — sum of recargas (PAYIN_*) completados (COP)
- *   6. Volumen OUT *    — RANKING KEY (★) — sum of PAYOUT_BANK +
- *                         BONUS/P2P/PURCHASE-out completados (COP).
- *                         Header annotated with a "★" marker so the user
- *                         sees the primary ranking column at a glance.
+ *   1. `#`              — ranking index (1..N)
+ *   2. Tikintag         — user-level identifier; `font-mono` for `$`-prefix
+ *   3. Empresa          — empresa que MÁS bonos le pagó a este usuario
+ *                         (BONUS-in `sourceTransferTikintag` más frecuente);
+ *                         em-dash cuando el usuario nunca recibió bono
+ *   4. Tx               — canonical event rows for this user (any status)
+ *   5. Ticket promedio  — `volumenOut / count(completed OUT events)`
+ *   6. Volumen OUT ★    — RANKING KEY — sum PAYOUT_BANK + PURCHASE-out
+ *                         completados (COP)
  *
- * Numeric columns right-aligned with `tabular-nums` for stable digit grid.
- *
- * Empty state: single muted-foreground line "Sin transacciones en el
- * período." — same convention as TopRechargers / TopCardUsers.
- *
- * v1→v2 difference (Plan 10-02 contract): this ranks USERS by `tikintag`,
- * NOT empresas. The v1 page surfaced `empresa_id`-grouped rankings under
- * GMV editorial framing; v2 anchors at the user level (tikintag).
- *
- * Cliente-foco contract: NO `data-presenter-*` attributes here per Plan
- * 10-02 conservative-default policy.
- *
- * Format gates: all COP, integer values via `@/lib/format`.
+ * Numeric columns right-aligned with `tabular-nums`.
  */
 
 import type { TopUserVolumeRow } from "@/lib/domain/inicio";
@@ -70,7 +47,7 @@ export function TopUsersByVolume({ rows }: Props) {
             <th className="pb-2 font-medium">Empresa</th>
             <th className="pb-2 text-right font-medium tabular-nums">Tx</th>
             <th className="pb-2 text-right font-medium tabular-nums">
-              Volumen IN
+              Ticket promedio
             </th>
             {/* Primary ranking column — marked with ★ so the user can see
                 at a glance which metric the table is sorted by. */}
@@ -95,7 +72,7 @@ export function TopUsersByVolume({ rows }: Props) {
                 {row.tikintag}
               </td>
               <td
-                className="max-w-[220px] truncate py-2"
+                className="max-w-[220px] truncate py-2 font-mono"
                 title={row.empresa ?? "—"}
               >
                 {row.empresa ?? (
@@ -106,7 +83,7 @@ export function TopUsersByVolume({ rows }: Props) {
                 {formatInteger(row.transacciones)}
               </td>
               <td className="py-2 text-right tabular-nums text-muted-foreground">
-                {formatCOP(row.volumenIn)}
+                {formatCOP(row.ticketPromedio)}
               </td>
               <td className="py-2 text-right tabular-nums font-medium text-foreground">
                 {formatCOP(row.volumenOut)}

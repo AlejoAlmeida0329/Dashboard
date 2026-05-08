@@ -615,34 +615,30 @@ export function aggregateActivityByWeekV2(
 /**
  * One row of the top-users-by-volume ranking (INI-V2-06).
  *
- * Plan 10-04 fix: ranking key is now `volumenOut` DESC (NOT `volumenNeto`)
- * — the operative-lens framing answers "who moves the most money out of
- * their Tikin wallet?" (purchases + payouts + bonos sent + p2p sent).
- * Heavy spenders/movers surface at the top; the secondary `volumenIn`
- * column shows their inflow context.
+ * Ranking key: `volumenOut` DESC. Operative-lens framing: "¿quién mueve
+ * más plata fuera de su wallet Tikin?" (PAYOUT_BANK + PURCHASE-out).
  *
- * Grouped by `tikintag` (the user) NOT by `empresa_id` — same convention
- * as TopRecharger / TopCardUser / TopEmisores / TopReceptores.
+ * `empresa` here is the empresa that PAID this user the most bonos
+ * (most-frequent BONUS-in `sourceTransferTikintag`) — NOT the user's own
+ * empresa label, which would be redundant with `tikintag`. Users that
+ * never received a bono show `undefined` and render as "—".
+ *
+ * Grouped by `tikintag` (the user) NOT by `empresa_id`.
  */
 export interface TopUserVolumeRow {
   /** Ranking key: the user's tikintag. */
   tikintag: string;
   /**
-   * Best-effort empresa label (first observed `empresa_nombre` for this
-   * tikintag).
+   * Empresa que más bonos le pagó a este usuario (primary bono payer).
+   * Computed from BONUS-in rows: most-frequent `sourceTransferTikintag`
+   * for receivers where `tikintag === <user>` and `direction === 'in'`.
+   * `undefined` when the user never received a bonus.
    */
   empresa: string | undefined;
   /**
-   * Sum of `Math.abs(monto)` across `isPlatformInRow(t)` rows for this
-   * tikintag (recargas — PAYIN_*). Restricted to `status === 'completed'`.
-   * Defensive `Math.abs` keeps the column positive even if a future
-   * schema drift introduces signed in-row montos.
-   */
-  volumenIn: number;
-  /**
    * Sum of `Math.abs(monto)` across `isPlatformOutRow(t)` rows for this
-   * tikintag (PAYOUT_BANK + BONUS/P2P/PURCHASE on the OUT side).
-   * Restricted to `status === 'completed'`. RANKING KEY for the table.
+   * tikintag (PAYOUT_BANK + PURCHASE-out). Restricted to
+   * `status === 'completed'`. RANKING KEY for the table.
    */
   volumenOut: number;
   /**
@@ -651,23 +647,31 @@ export interface TopUserVolumeRow {
    * any status). Each event counts once.
    */
   transacciones: number;
+  /**
+   * `volumenOut / count(completed OUT events for this user)` — the average
+   * size of a successful platform-OUT ticket. Zero-safe (`0` when the
+   * user has no completed OUT events).
+   */
+  ticketPromedio: number;
 }
 
 /**
  * Top-N tikintags ranked by `volumenOut` DESC (INI-V2-06).
  *
  * Algorithm:
- *   1. Group rows by `tikintag` into accumulator Map. Per group:
- *      - For platform-IN rows with status='completed':
- *        `volumenIn += Math.abs(monto)`.
+ *   1. Pre-pass — for each (receiver tikintag, payer tikintag) pair,
+ *      count BONUS-in events where `tikintag = receiver` and
+ *      `sourceTransferTikintag = payer`. Pick the most-frequent payer per
+ *      receiver as their `empresa` label (lexicographic tiebreak ASC).
+ *   2. Main pass — group canonical event rows by `tikintag`. Per group:
  *      - For platform-OUT rows with status='completed':
- *        `volumenOut += Math.abs(monto)`.
+ *        `volumenOut += Math.abs(monto)` and `transOutCompleted += 1`.
  *      - For canonical event rows (any status): increment `transacciones`.
- *      - Capture first-observed `empresa_nombre` (first-occurrence-wins).
- *   2. Sort DESC by `volumenOut`. Deterministic tiebreak: then DESC by
- *      `volumenIn` (between two equal-spenders, the bigger receiver wins);
- *      then DESC by `transacciones`; then `tikintag` lexicographic ASC.
- *   3. Slice to top `limit`.
+ *   3. Compute `ticketPromedio = volumenOut / transOutCompleted`
+ *      (zero-safe).
+ *   4. Sort DESC by `volumenOut`. Tiebreak: DESC `transacciones`, DESC
+ *      `ticketPromedio`, then `tikintag` lex ASC.
+ *   5. Slice to top `limit`.
  *
  * Rows where `tikintag` is empty/falsy are skipped — defensive.
  * Rows that are NOT canonical event rows (IN-side mirror of bidirectional
@@ -680,7 +684,41 @@ export function aggregateTopUsersByVolume(
   transactions: Transaction[],
   limit = 10,
 ): TopUserVolumeRow[] {
-  const acc = new Map<string, TopUserVolumeRow>();
+  // Pre-pass: build the bono-payer map from BONUS-in rows.
+  // Map<receiver_tikintag, Map<payer_tikintag, count>>.
+  const bonoPayerCounts = new Map<string, Map<string, number>>();
+  for (const t of transactions) {
+    if (t.tipo !== "BONUS") continue;
+    if (t.direction !== "in") continue;
+    if (!t.tikintag) continue;
+    const payer = t.sourceTransferTikintag;
+    if (!payer) continue;
+    let inner = bonoPayerCounts.get(t.tikintag);
+    if (!inner) {
+      inner = new Map<string, number>();
+      bonoPayerCounts.set(t.tikintag, inner);
+    }
+    inner.set(payer, (inner.get(payer) ?? 0) + 1);
+  }
+  const primaryBonoPayer = new Map<string, string>();
+  for (const [receiver, inner] of bonoPayerCounts) {
+    let bestPayer: string | undefined;
+    let bestCount = -1;
+    for (const [payer, count] of inner) {
+      if (
+        count > bestCount ||
+        (count === bestCount && bestPayer !== undefined && payer < bestPayer)
+      ) {
+        bestPayer = payer;
+        bestCount = count;
+      }
+    }
+    if (bestPayer) primaryBonoPayer.set(receiver, bestPayer);
+  }
+
+  // Main pass: aggregate per-user OUT volume + transacciones counters.
+  type Acc = TopUserVolumeRow & { transOutCompleted: number };
+  const acc = new Map<string, Acc>();
   for (const t of transactions) {
     if (!t.tikintag) continue;
     if (!isCanonicalEventRow(t)) continue;
@@ -689,29 +727,35 @@ export function aggregateTopUsersByVolume(
     if (!row) {
       row = {
         tikintag: t.tikintag,
-        empresa: t.empresa_nombre || undefined,
-        volumenIn: 0,
+        empresa: primaryBonoPayer.get(t.tikintag),
         volumenOut: 0,
         transacciones: 0,
+        ticketPromedio: 0,
+        transOutCompleted: 0,
       };
       acc.set(t.tikintag, row);
     }
     row.transacciones += 1;
-    if (t.status === "completed") {
-      if (isPlatformInRow(t)) {
-        row.volumenIn += Math.abs(t.monto);
-      } else if (isPlatformOutRow(t)) {
-        row.volumenOut += Math.abs(t.monto);
-      }
+    if (t.status === "completed" && isPlatformOutRow(t)) {
+      row.volumenOut += Math.abs(t.monto);
+      row.transOutCompleted += 1;
     }
   }
 
-  const ranked = Array.from(acc.values());
+  const ranked: TopUserVolumeRow[] = Array.from(acc.values()).map((r) => ({
+    tikintag: r.tikintag,
+    empresa: r.empresa,
+    volumenOut: r.volumenOut,
+    transacciones: r.transacciones,
+    ticketPromedio:
+      r.transOutCompleted > 0 ? r.volumenOut / r.transOutCompleted : 0,
+  }));
   ranked.sort((a, b) => {
     if (b.volumenOut !== a.volumenOut) return b.volumenOut - a.volumenOut;
-    if (b.volumenIn !== a.volumenIn) return b.volumenIn - a.volumenIn;
     if (b.transacciones !== a.transacciones)
       return b.transacciones - a.transacciones;
+    if (b.ticketPromedio !== a.ticketPromedio)
+      return b.ticketPromedio - a.ticketPromedio;
     return a.tikintag < b.tikintag ? -1 : a.tikintag > b.tikintag ? 1 : 0;
   });
   return ranked.slice(0, limit);
