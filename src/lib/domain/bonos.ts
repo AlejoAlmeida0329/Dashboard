@@ -82,7 +82,17 @@ function endOfDayBogotaTimestamp(s: string | undefined): number {
 
 // === v2 Output types (Plan 07-01 — split source/destination) ================
 
-/** Header KPIs for the v2 Bonos tab — split in vs out. */
+/**
+ * Header KPIs for the v2 Bonos surface. Carries BOTH directions because
+ * Vista Cliente needs the cliente's bonos recibidos (countIn / montoIn).
+ * The /bonos tab itself only renders the OUT side (countOut / montoOut /
+ * ticketPromedio); see `KPICardsV2`.
+ *
+ * `ticketPromedio` is computed over OUT only — the operative-lens KPI is
+ * "ticket promedio de bonos pagados". Vista Cliente displays its own
+ * per-direction breakdown (BonosClienteCards) instead of this single
+ * promedio.
+ */
 export interface BonoSummaryV2 {
   /** Bonos recibidos in the filtered range (BONUS direction=in). */
   countIn: number;
@@ -93,13 +103,13 @@ export interface BonoSummaryV2 {
   /** Sum of `monto` for bonos enviados (COP). */
   montoOut: number;
   /**
-   * Average ticket size across BOTH directions combined: `(montoIn + montoOut)
-   * / (countIn + countOut)`. `0` (not NaN) when there are no bonos.
+   * Average ticket size of bonos enviados: `montoOut / countOut`.
+   * `0` (not NaN) when there are no bonos enviados.
    */
   ticketPromedio: number;
 }
 
-/** One point on the v2 stacked timeline (in vs out per Bogotá day). */
+/** One point on the v2 timeline (in vs out per Bogotá day). */
 export interface BonoByDateV2 {
   /** ISO date `YYYY-MM-DD` interpreted in Bogotá. */
   date: string;
@@ -196,8 +206,7 @@ export function summarizeBonosV2(bonos: Transaction[]): BonoSummaryV2 {
       montoOut += b.monto;
     }
   }
-  const total = countIn + countOut;
-  const ticketPromedio = total > 0 ? (montoIn + montoOut) / total : 0;
+  const ticketPromedio = countOut > 0 ? montoOut / countOut : 0;
   return { countIn, countOut, montoIn, montoOut, ticketPromedio };
 }
 
@@ -234,22 +243,23 @@ export function aggregateBonosByDateV2(bonos: Transaction[]): BonoByDateV2[] {
 }
 
 /**
- * Internal: group bonos by the supplied tikintag selector, aggregate
- * count + monto, and return the top N rows by `count` DESC (ties broken
- * by `monto` DESC). Rows whose selector returns `undefined` or empty
- * string are EXCLUDED from the ranking (a peer-less bono cannot be
- * attributed to a sender or receiver).
+ * Top emisores de bonos — rank tikintags by total monto SENT (DESC).
+ * Tiebreak: count DESC, then tikintag lex ASC.
  *
- * Pure. O(n + k log k) where k = distinct tikintags.
+ * Reads `sourceTransferTikintag` (Plan 07-01 schema add). A bono with no
+ * `sourceTransferTikintag` is excluded from the ranking entirely.
+ * Default `n = 10`.
+ *
+ * Pure. Returns a NEW array.
  */
-function aggregateByTikintag(
+export function aggregateTopEmisores(
   bonos: Transaction[],
-  selector: (t: Transaction) => string | undefined,
-  n: number,
+  n = 10,
 ): BonoTikintagRow[] {
   const acc = new Map<string, BonoTikintagRow>();
   for (const b of bonos) {
-    const tikintag = selector(b);
+    if (b.direction !== "out") continue;
+    const tikintag = b.sourceTransferTikintag;
     if (!tikintag || tikintag.length === 0) continue;
     const cur = acc.get(tikintag);
     if (cur) {
@@ -260,38 +270,10 @@ function aggregateByTikintag(
     }
   }
   const rows = Array.from(acc.values());
-  rows.sort((a, b) =>
-    b.count !== a.count ? b.count - a.count : b.monto - a.monto,
-  );
+  rows.sort((a, b) => {
+    if (b.monto !== a.monto) return b.monto - a.monto;
+    if (b.count !== a.count) return b.count - a.count;
+    return a.tikintag < b.tikintag ? -1 : a.tikintag > b.tikintag ? 1 : 0;
+  });
   return rows.slice(0, n);
-}
-
-/**
- * Top emisores de bonos — rank tikintags by how many bonos they SENT.
- *
- * Reads `sourceTransferTikintag` (Plan 07-01 schema add). A bono with no
- * `sourceTransferTikintag` is excluded from the ranking entirely (cannot
- * be attributed). Default `n = 10`; pass a smaller `n` when the v2 page
- * needs a 5-row cockpit variant.
- *
- * Pure. Returns a NEW array sorted DESC by count.
- */
-export function aggregateTopEmisores(
-  bonos: Transaction[],
-  n = 10,
-): BonoTikintagRow[] {
-  return aggregateByTikintag(bonos, (t) => t.sourceTransferTikintag, n);
-}
-
-/**
- * Top receptores de bonos — rank tikintags by how many bonos they RECEIVED.
- *
- * Reads `destinationTransferTikintag` (Plan 07-01 schema add). Same
- * exclusion + sort + default-N rules as `aggregateTopEmisores`.
- */
-export function aggregateTopReceptores(
-  bonos: Transaction[],
-  n = 10,
-): BonoTikintagRow[] {
-  return aggregateByTikintag(bonos, (t) => t.destinationTransferTikintag, n);
 }

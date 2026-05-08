@@ -1,38 +1,20 @@
 "use client";
 
 /**
- * Stacked-bar timeline — Client Component (Plan 07-02 BON-V2-07).
+ * Line timeline — Client Component (BON-V2-07).
  *
- * Plots `enviados` (countOut) vs `recibidos` (countIn) per Bogotá day as
- * stacked bars (Recharts BarChart). The chart sits below the rankings as
- * a CONTEXT sub-protagonist (07-CONTEXT.md essentials: rankings dominate
- * the first scroll; the chart explains "when").
+ * Plots `countOut` (bonos enviados) per Bogotá day as a single line.
+ * Replaces the v2 stacked-bar chart now that v2 Bonos is OUT-only.
  *
- * Color choices (no Tailwind opacity on bars — Recharts doesn't compose
- * Tailwind opacity gracefully on `<Bar fill=...>`; we hard-code two OKLCH
- * shades anchored on the section-bonos hue):
- *   - countOut → darker shade (the "enviados" stack base)
- *   - countIn  → lighter shade (the "recibidos" stack on top)
- *
- * Both shades are pinned to `oklch(L 0.20 295)` with L = 0.50 (darker) and
- * L = 0.65 (lighter); 295° is the Bonos hue established in Plan 06-04. The
- * lift is comfortably visible in both light and dark modes (the .dark CSS
- * already lifts the section vars +0.10 lightness — the chart fills are
- * stable across themes because we don't read CSS vars from JS here).
- *
- * Why a Client Component:
- *   - Recharts ResponsiveContainer needs the actual DOM (window resize).
- *   - The wrapping page stays a Server Component; this leaf is the only
- *     piece that hydrates.
- *
- * Empty state: render a simple <p> instead of an empty Recharts axis frame.
+ * Color: section-bonos hue (`oklch(0.50 0.20 295)`), pinned in JS for
+ * Recharts compatibility (theme variable lifts apply only to dark mode
+ * via CSS, but the JS-pinned shade is comfortably visible in both).
  */
 
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
-  Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -42,8 +24,7 @@ import {
 import type { BonoByDateV2 } from "@/lib/domain/bonos";
 import { formatCOP, formatInteger } from "@/lib/format";
 
-const FILL_OUT = "oklch(0.50 0.20 295)"; // enviados — darker violet
-const FILL_IN = "oklch(0.65 0.20 295)"; // recibidos — lighter violet
+const STROKE = "oklch(0.50 0.20 295)";
 
 type Props = {
   data: BonoByDateV2[];
@@ -51,7 +32,6 @@ type Props = {
 
 type TooltipPayload = {
   payload?: BonoByDateV2;
-  dataKey?: string;
   value?: number;
 };
 
@@ -71,17 +51,9 @@ function FlowTooltip({
     <div className="rounded-md border bg-background p-3 text-xs shadow-sm">
       <div className="mb-1 font-medium text-foreground">{label}</div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 tabular-nums">
-        <span className="text-muted-foreground">Recibidos</span>
-        <span className="text-right text-foreground">
-          {formatInteger(row.countIn)}
-        </span>
         <span className="text-muted-foreground">Enviados</span>
         <span className="text-right text-foreground">
           {formatInteger(row.countOut)}
-        </span>
-        <span className="text-muted-foreground">$ recibido</span>
-        <span className="text-right text-foreground">
-          {formatCOP(row.montoIn)}
         </span>
         <span className="text-muted-foreground">$ enviado</span>
         <span className="text-right text-foreground">
@@ -102,9 +74,9 @@ export function BonosFlowChart({ data }: Props) {
   }
 
   return (
-    <div className="h-[320px] w-full">
+    <div className="h-[280px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart
+        <LineChart
           data={data}
           margin={{ top: 8, right: 16, bottom: 8, left: 16 }}
         >
@@ -123,21 +95,17 @@ export function BonosFlowChart({ data }: Props) {
             tick={{ fontSize: 12 }}
             className="text-muted-foreground"
           />
-          <Tooltip content={<FlowTooltip />} cursor={{ fillOpacity: 0.1 }} />
-          <Legend wrapperStyle={{ fontSize: "0.75rem" }} />
-          <Bar
+          <Tooltip content={<FlowTooltip />} />
+          <Line
+            type="monotone"
             dataKey="countOut"
             name="Enviados"
-            stackId="bonos"
-            fill={FILL_OUT}
+            stroke={STROKE}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
           />
-          <Bar
-            dataKey="countIn"
-            name="Recibidos"
-            stackId="bonos"
-            fill={FILL_IN}
-          />
-        </BarChart>
+        </LineChart>
       </ResponsiveContainer>
     </div>
   );
