@@ -55,11 +55,11 @@ export function AgingAlert({ rows }: Props) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="pb-2 font-medium">Tikintag holder</th>
-                <th className="pb-2 font-medium text-right tabular-nums">
+                <th className="pb-2 pr-4 font-medium">Tikintag holder</th>
+                <th className="pb-2 pr-4 font-medium text-right tabular-nums">
                   Aging
                 </th>
-                <th className="pb-2 font-medium text-right tabular-nums">
+                <th className="pb-2 pr-4 font-medium text-right tabular-nums">
                   Monto
                 </th>
                 <th className="pb-2 font-medium">Banco</th>
@@ -72,15 +72,15 @@ export function AgingAlert({ rows }: Props) {
                   className="border-b last:border-b-0 hover:bg-muted/40"
                 >
                   <td
-                    className="max-w-[280px] truncate py-2"
+                    className="max-w-[280px] truncate py-2 pr-4"
                     title={r.holder}
                   >
                     {r.holder}
                   </td>
-                  <td className="py-2 text-right tabular-nums font-mono text-status-fail">
+                  <td className="py-2 pr-4 text-right tabular-nums font-mono text-status-fail">
                     {formatMinutes(r.agingMinutes)}
                   </td>
-                  <td className="py-2 text-right tabular-nums">
+                  <td className="py-2 pr-4 text-right tabular-nums">
                     {formatCOP(r.monto)}
                   </td>
                   <td className="py-2">{displayBancoName(r.medium)}</td>
