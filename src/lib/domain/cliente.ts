@@ -475,16 +475,16 @@ export function aggregateClienteP2P(
     }
   }
 
-  // Sort rows by fecha DESC; cap at 50.
+  // Sort rows by fecha DESC. Client-side paginator (UltimasP2PTable) slices
+  // 10-at-a-time — the historical tail stays accessible via pagination.
   rows.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
-  const cappedRows = rows.length > 50 ? rows.slice(0, 50) : rows;
 
   return {
     countIn,
     countOut,
     montoIn,
     montoOut,
-    rows: cappedRows,
+    rows,
   };
 }
 
@@ -670,9 +670,9 @@ export function aggregateClienteTimeline(
     });
   }
 
-  // Sort DESC by date; cap at 200 events (defensive — pathological cases
-  // where a single tikintag has thousands of events in window).
+  // Sort DESC by date. Client-side paginator (TimelineActivity) slices the
+  // feed 10-at-a-time so the historical tail stays reachable via the pager.
   events.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
-  return events.length > 200 ? events.slice(0, 200) : events;
+  return events;
 }
 

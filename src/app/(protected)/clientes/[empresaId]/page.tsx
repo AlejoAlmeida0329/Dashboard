@@ -111,12 +111,13 @@ import { P2PCards } from "@/components/clientes/P2PCards";
 import { RetirosBancoTable } from "@/components/clientes/RetirosBancoTable";
 import { TikintagSelector } from "@/components/clientes/TikintagSelector";
 import { TimelineActivity } from "@/components/clientes/TimelineActivity";
+import { UltimasP2PTable } from "@/components/clientes/UltimasP2PTable";
+import { UltimosBonosTable } from "@/components/clientes/UltimosBonosTable";
 
 // Domain
 import { filterBonosV2, summarizeBonosV2 } from "@/lib/domain/bonos";
 import { filterPurchases, summarizePurchases } from "@/lib/domain/cardUsage";
 import {
-  aggregateClienteBenchmark,
   aggregateClienteP2P,
   aggregateClienteTimeline,
   findClienteSummary,
@@ -217,12 +218,10 @@ export default async function VistaClientePage({
     );
   }
 
-  // 5b. Single JOIN per request — threaded into benchmark + timeline +
-  //     RetirosBancoTable narrowed prop. Plan 06-02 contract; do NOT
-  //     re-run joinPayouts elsewhere on this page.
+  // 5b. Single JOIN per request — threaded into timeline + RetirosBancoTable
+  //     narrowed prop. Plan 06-02 contract; do NOT re-run joinPayouts
+  //     elsewhere on this page.
   const joined = joinPayouts(allTx, allPayouts);
-
-  const benchmark = aggregateClienteBenchmark(joined, empresaId);
 
   // 5c. Narrow the JOIN result for the table — keeps `transaction.empresa_id`
   //     match in scope; preserves matched Transaction context for each row.
@@ -266,9 +265,7 @@ export default async function VistaClientePage({
 
       <TikintagSelector options={tikintagOptions} current={empresaId} />
 
-      <ClienteKPIHeader summary={summary} benchmark={benchmark} />
-
-      <RetirosBancoTable payouts={clientPayouts} />
+      <ClienteKPIHeader summary={summary} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <BonosClienteCards summary={bonosSummary} />
@@ -276,6 +273,12 @@ export default async function VistaClientePage({
       </div>
 
       <P2PCards p2p={p2p} />
+
+      <RetirosBancoTable payouts={clientPayouts} />
+
+      <UltimasP2PTable rows={p2p.rows} />
+
+      <UltimosBonosTable transactions={bonosFiltered} />
 
       <div data-presenter-hide>
         <TimelineActivity events={timelineEvents} />
