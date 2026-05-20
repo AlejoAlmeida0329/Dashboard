@@ -110,6 +110,7 @@ import { ColaboradoresPayoutsCard } from "@/components/clientes/ColaboradoresPay
 import { ComprasClienteCard } from "@/components/clientes/ComprasClienteCard";
 import { GenerarVistaClienteButton } from "@/components/clientes/GenerarVistaClienteButton";
 import { P2PCards } from "@/components/clientes/P2PCards";
+import { RecargasClienteCard } from "@/components/clientes/RecargasClienteCard";
 import { TikintagSelector } from "@/components/clientes/TikintagSelector";
 
 // Domain
@@ -125,6 +126,7 @@ import {
 } from "@/lib/domain/clientes";
 import { getEmpresaRegistry } from "@/lib/domain/empresas";
 import { joinPayouts } from "@/lib/domain/join";
+import { filterRecargasV2, summarizeRecargasV2 } from "@/lib/domain/recargas";
 
 // Sheets
 import { getCachedPayouts } from "@/lib/sheets/payouts";
@@ -244,6 +246,10 @@ export default async function VistaClientePage({
   const purchasesFiltered = filterPurchases(allTx, tikintagFilters);
   const purchasesSummary = summarizePurchases(purchasesFiltered);
 
+  // 5f-bis. Recargas (PAYIN_PSE + PAYIN_TRANSFER direction='in') THIS tikintag.
+  const recargasFiltered = filterRecargasV2(allTx, tikintagFilters);
+  const recargasSummary = summarizeRecargasV2(recargasFiltered);
+
   // 5h. Tikintag selector options — derived from the same registry the
   //     DashboardHeader's EmpresaFilter consumes (235 entries today).
   //     React `cache()` on the BD_Plataforma fetch dedupes the read
@@ -268,7 +274,10 @@ export default async function VistaClientePage({
         <ComprasClienteCard summary={purchasesSummary} />
       </div>
 
-      <P2PCards p2p={p2p} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <P2PCards p2p={p2p} />
+        <RecargasClienteCard summary={recargasSummary} />
+      </div>
 
       <ColaboradoresPayoutsCard stats={collaboratorStats} />
 

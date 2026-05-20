@@ -361,6 +361,19 @@ export function summarizeInicioV2(
 
   for (const t of filteredRows) {
     if (t.tikintag) filteredTikintagSet.add(t.tikintag);
+    // Inclusión de colaboradores SIN cuenta propia: los destinatarios de
+    // BONUS completados son usuarios "vivos" en el período aunque nunca
+    // hayan creado un row propio en BD_Plataforma (caso clásico: phone-
+    // tikintag que recibió un bono y aún no se registró con nickname).
+    // Sin esto el contador subestima la base real — el sumando de los
+    // colaboradores por empresa supera el "usuarios activos" del header.
+    if (
+      t.tipo === "BONUS" &&
+      t.status === "completed" &&
+      t.destinationTransferTikintag
+    ) {
+      filteredTikintagSet.add(t.destinationTransferTikintag);
+    }
 
     // Status counters + total — over canonical event rows only, so each
     // bidirectional event contributes exactly one (the OUT side).
@@ -383,13 +396,20 @@ export function summarizeInicioV2(
   const total = countCompleted + countFailed + countInProgress;
   const successRate = total > 0 ? countCompleted / total : 0;
 
-  // Full-pool denominator — DISTINCT tikintag across all transactions.
-  // We exclude OTRO_DIRECTION rows here too (mirror filterInicioV2's
-  // defensive guard); in practice BD_Plataforma has no OTRO_DIRECTION rows.
+  // Full-pool denominator — DISTINCT tikintag across all transactions,
+  // sumando también destinatarios de BONUS completados (colaboradores sin
+  // cuenta propia). Sin esto, "usuariosTotal" subestima al universo real.
   const totalTikintagSet = new Set<string>();
   for (const t of allTx) {
     if (t.direction === "OTRO_DIRECTION") continue;
     if (t.tikintag) totalTikintagSet.add(t.tikintag);
+    if (
+      t.tipo === "BONUS" &&
+      t.status === "completed" &&
+      t.destinationTransferTikintag
+    ) {
+      totalTikintagSet.add(t.destinationTransferTikintag);
+    }
   }
 
   return {
@@ -556,6 +576,13 @@ export function aggregateActivityByDateV2(
       byBucket.set(bucket, acc);
     }
     if (t.tikintag) acc.tikintags.add(t.tikintag);
+    if (
+      t.tipo === "BONUS" &&
+      t.status === "completed" &&
+      t.destinationTransferTikintag
+    ) {
+      acc.tikintags.add(t.destinationTransferTikintag);
+    }
     if (t.status === "completed") {
       if (isPlatformInRow(t)) acc.volumenIn += Math.abs(t.monto);
       else if (isPlatformOutRow(t)) acc.volumenOut += Math.abs(t.monto);
@@ -597,6 +624,13 @@ export function aggregateActivityByWeekV2(
       byBucket.set(bucket, acc);
     }
     if (t.tikintag) acc.tikintags.add(t.tikintag);
+    if (
+      t.tipo === "BONUS" &&
+      t.status === "completed" &&
+      t.destinationTransferTikintag
+    ) {
+      acc.tikintags.add(t.destinationTransferTikintag);
+    }
     if (t.status === "completed") {
       if (isPlatformInRow(t)) acc.volumenIn += Math.abs(t.monto);
       else if (isPlatformOutRow(t)) acc.volumenOut += Math.abs(t.monto);

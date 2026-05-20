@@ -65,9 +65,6 @@ export function BonosPorFechaTable({ rows }: Props) {
                       Colaboradores pagados
                     </th>
                     <th className="pb-2 text-right font-medium tabular-nums">
-                      Bonos
-                    </th>
-                    <th className="pb-2 text-right font-medium tabular-nums">
                       Monto total
                     </th>
                   </tr>
@@ -83,9 +80,6 @@ export function BonosPorFechaTable({ rows }: Props) {
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         {formatInteger(r.colaboradoresCount)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        {formatInteger(r.bonosCount)}
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         {formatCOP(r.montoTotal)}
