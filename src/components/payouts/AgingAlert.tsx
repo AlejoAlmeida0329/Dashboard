@@ -15,6 +15,7 @@
  * Format gates: formatMinutes for Aging column, formatCOP for Monto.
  */
 
+import { SlaBadge } from "@/components/payouts/SlaBadge";
 import {
   Card,
   CardContent,
@@ -59,6 +60,7 @@ export function AgingAlert({ rows }: Props) {
                 <th className="pb-2 pr-4 font-medium text-right tabular-nums">
                   Aging
                 </th>
+                <th className="pb-2 pr-4 font-medium">vs SLA</th>
                 <th className="pb-2 pr-4 font-medium text-right tabular-nums">
                   Monto
                 </th>
@@ -79,6 +81,9 @@ export function AgingAlert({ rows }: Props) {
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums font-mono text-status-fail">
                     {formatMinutes(r.agingMinutes)}
+                  </td>
+                  <td className="py-2 pr-4">
+                    <SlaBadge businessMinutes={r.agingBusinessMinutes} />
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums">
                     {formatCOP(r.monto)}

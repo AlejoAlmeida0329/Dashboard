@@ -24,6 +24,8 @@
  *     renders as `'—'` via formatMinutes — the empty-period signal.
  */
 
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
+
 import {
   Card,
   CardContent,
@@ -31,6 +33,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  SLA_BUSINESS_MINUTES,
+  slaStatus,
+} from "@/lib/business-hours";
 import type { PayoutStateBreakdown } from "@/lib/domain/payouts";
 import {
   formatCOP,
@@ -41,6 +47,8 @@ import {
 
 type Props = {
   avgMinutes: number;
+  /** Promedio en minutos hábiles (08:00–18:00 COT, L-V, sin festivos). Para SLA badge. */
+  avgBusinessMinutes: number;
   breakdown: PayoutStateBreakdown;
   montoTotalCompleted: number;
   thirdPartyCount: number;
@@ -66,6 +74,7 @@ function successRateAccent(rate: number): string {
 
 export function PayoutsKPICardsV2({
   avgMinutes,
+  avgBusinessMinutes,
   breakdown,
   montoTotalCompleted,
   thirdPartyCount,
@@ -75,17 +84,30 @@ export function PayoutsKPICardsV2({
 }: Props) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {/* 1. Tiempo promedio — PRIMARY */}
+      {/* 1. Tiempo promedio — PRIMARY (en HÁBILES contra SLA 12h) */}
       <Card>
         <CardHeader>
-          <CardDescription>Tiempo promedio</CardDescription>
-          <CardTitle className="font-heading text-section-payouts text-4xl tabular-nums">
-            {formatMinutes(avgMinutes)}
+          <CardDescription>Tiempo promedio (Hábil)</CardDescription>
+          <CardTitle
+            className={`font-heading text-4xl tabular-nums ${
+              breakdown.completed > 0
+                ? slaStatus(avgBusinessMinutes) === "within"
+                  ? "text-status-success"
+                  : "text-status-fail"
+                : "text-muted-foreground"
+            }`}
+          >
+            {breakdown.completed > 0
+              ? formatMinutes(avgBusinessMinutes)
+              : "—"}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground">
-            Mediana de procesamiento (completados)
+        <CardContent className="space-y-1">
+          {breakdown.completed > 0 ? (
+            <SlaVerdictLine businessMinutes={avgBusinessMinutes} />
+          ) : null}
+          <p className="text-xs text-muted-foreground tabular-nums">
+            Tiempo promedio (Crudo): {formatMinutes(avgMinutes)}
           </p>
         </CardContent>
       </Card>
@@ -187,5 +209,24 @@ export function PayoutsKPICardsV2({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Línea de verdict para el KPI "Tiempo promedio (hábil)" — NO repite los
+ * minutos (ya viven en el headline); sólo el icono + el verdict + diff.
+ */
+function SlaVerdictLine({ businessMinutes }: { businessMinutes: number }) {
+  const within = slaStatus(businessMinutes) === "within";
+  const Icon = within ? CheckCircle2 : AlertTriangle;
+  const cls = within ? "text-status-success" : "text-status-fail";
+  const diff = Math.abs(businessMinutes - SLA_BUSINESS_MINUTES);
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs ${cls}`}>
+      <Icon className="size-3" />
+      {within
+        ? "Dentro de SLA (12h hábiles)"
+        : `Excedió SLA por ${formatMinutes(diff)}`}
+    </span>
   );
 }

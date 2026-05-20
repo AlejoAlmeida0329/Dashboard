@@ -25,6 +25,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PaginationFooter } from "@/components/clientes/PaginationFooter";
+import { SlaBadge } from "@/components/payouts/SlaBadge";
+import { payoutBusinessMinutes } from "@/lib/business-hours";
 import type { JoinedPayout } from "@/lib/domain/join";
 import type { PayoutState } from "@/lib/domain/types";
 import { formatBogotaDate, formatCOP, formatMinutes } from "@/lib/format";
@@ -99,8 +101,9 @@ export function RetirosBancoTable({ payouts }: Props) {
                       Monto
                     </th>
                     <th className="pb-2 text-right font-medium tabular-nums">
-                      Tiempo
+                      Tiempo (Crudo)
                     </th>
+                    <th className="pb-2 font-medium">Tiempo (Hábil)</th>
                     <th className="pb-2 font-medium">Estado</th>
                     <th
                       className="pb-2 font-medium"
@@ -116,6 +119,10 @@ export function RetirosBancoTable({ payouts }: Props) {
                     const minutes = Number.isFinite(p.latencySeconds)
                       ? p.latencySeconds / 60
                       : 0;
+                    const businessMinutes = payoutBusinessMinutes(
+                      p.fecha,
+                      p.latencySeconds,
+                    );
                     return (
                       <tr
                         key={p.internalId}
@@ -136,6 +143,15 @@ export function RetirosBancoTable({ payouts }: Props) {
                         </td>
                         <td className="py-2 text-right tabular-nums font-mono text-muted-foreground">
                           {formatMinutes(minutes)}
+                        </td>
+                        <td className="py-2">
+                          {p.state === "completed" ? (
+                            <SlaBadge businessMinutes={businessMinutes} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              —
+                            </span>
+                          )}
                         </td>
                         <td className="py-2">
                           <span

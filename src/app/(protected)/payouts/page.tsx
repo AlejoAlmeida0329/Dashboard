@@ -76,9 +76,9 @@ import { TopRetirosBanco } from "@/components/payouts/TopRetirosBanco";
 import { joinPayouts } from "@/lib/domain/join";
 import {
   aggregateAgingAlertPending,
-  aggregateAverageProcessingMinutes,
   aggregateFailureReasons,
   aggregatePayoutTimeByEmpresa,
+  aggregateProcessingTimeStats,
   aggregateThirdPartyPayouts,
   aggregateTopBancos,
   aggregateTopRetirosBanco,
@@ -157,7 +157,8 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
 
   // Aggregates.
   const breakdown = summarizePayoutsByState(periodOnly);
-  const avgMinutes = aggregateAverageProcessingMinutes(completed);
+  const { avgMinutes, avgBusinessMinutes } =
+    aggregateProcessingTimeStats(completed);
   const agingRows = aggregateAgingAlertPending(periodOnly, 120);
   const failureRows = aggregateFailureReasons(periodOnly);
   const topBancos = aggregateTopBancos(completed);
@@ -202,6 +203,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
       <div className="space-y-6">
         <PayoutsKPICardsV2
           avgMinutes={avgMinutes}
+          avgBusinessMinutes={avgBusinessMinutes}
           breakdown={breakdown}
           montoTotalCompleted={montoTotalCompleted}
           thirdPartyCount={thirdParty.length}
@@ -230,6 +232,7 @@ export default async function PayoutsPage({ searchParams }: PageProps) {
       {/* Tiempo + Tasa éxito + Volumen + Terceros — TIME-FIRST. */}
       <PayoutsKPICardsV2
         avgMinutes={avgMinutes}
+        avgBusinessMinutes={avgBusinessMinutes}
         breakdown={breakdown}
         montoTotalCompleted={montoTotalCompleted}
         thirdPartyCount={thirdParty.length}

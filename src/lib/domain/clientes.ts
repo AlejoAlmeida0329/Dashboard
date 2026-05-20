@@ -65,6 +65,8 @@
  *   fees) and would double-count if they triggered "activa".
  */
 
+import { payoutBusinessMinutes } from "@/lib/business-hours";
+import type { JoinedPayout } from "./join";
 import type { Transaction } from "./types";
 import type { DashboardFilters } from "@/lib/url-state";
 
@@ -283,5 +285,151 @@ export function summarizeEmpresasIndex(
   return {
     totalEmpresas: rows.length,
     empresasActivas,
+  };
+}
+
+/** Stats de colaboradores + payouts + compras para una empresa (Vista Cliente). */
+export interface EmpresaCollaboratorStats {
+  /**
+   * Distinct count of collaborators: `destinationTransferTikintag` across
+   * COMPLETED BONUS rows where `sourceTransferTikintag === empresa_id`. Se
+   * excluyen self-bonos (sender === receiver) y filas con cualquiera de los
+   * dos lados vacío.
+   */
+  collaboratorCount: number;
+  /**
+   * Conteo de PAYOUT_BANK (JoinedPayout) cuya `transaction.empresa_id`
+   * pertenece al set de colaboradores de la empresa. Incluye TODOS los
+   * estados (completed/in_progress/failed).
+   */
+  bankWithdrawalsCount: number;
+  /**
+   * Suma de `monto` (COP) de los payouts COMPLETADOS de colaboradores.
+   * Filtra a `state === 'completed'` para no inflar con intentos fallidos.
+   */
+  bankWithdrawalsTotal: number;
+  /**
+   * Ticket promedio de retiros = `bankWithdrawalsTotal / completados`.
+   * `null` cuando no hay payouts completados.
+   */
+  bankWithdrawalsAvgTicket: number | null;
+  /**
+   * Promedio de `latencySeconds / 60` sobre payouts de colaboradores
+   * RESTRINGIDO a `state === 'completed'` (failed/in_progress cargan el
+   * fallback Aging y contaminarían la media — convención Phase 3).
+   * `null` cuando no hay payouts completados.
+   */
+  avgPayoutMinutes: number | null;
+  /**
+   * Promedio de minutos hábiles (08:00–18:00 COT, L-V, sin festivos) sobre
+   * los mismos payouts completados. Para comparar contra el SLA de 12h
+   * hábiles. `null` cuando no hay payouts completados.
+   */
+  avgPayoutBusinessMinutes: number | null;
+  /**
+   * Distinct tikintags (de los colaboradores) que han hecho al menos una
+   * PURCHASE direction='out' status='completed'.
+   */
+  cardUsersCount: number;
+  /**
+   * Conteo de PURCHASE direction='out' status='completed' rows donde
+   * `empresa_id ∈ collaborators`.
+   */
+  cardPurchasesCount: number;
+  /**
+   * Suma de `Math.abs(monto)` (COP) de esas compras (PURCHASE-out trae monto
+   * negativo en la convención de Phase 2; lo invertimos para sumar como
+   * desembolso positivo, consistente con `summarizePurchases`).
+   */
+  cardPurchasesTotal: number;
+  /**
+   * Ticket promedio de compras = `cardPurchasesTotal / cardPurchasesCount`.
+   * `null` cuando no hay compras.
+   */
+  cardPurchasesAvgTicket: number | null;
+}
+
+/**
+ * Computa stats de "colaboradores + sus payouts" para UNA empresa (para
+ * la card del dossier `/clientes/[empresaId]`).
+ *
+ * Modelo (decisión de producto): un "colaborador" de la empresa $E es un
+ * tikintag T tal que existe un BONUS completado con
+ * `sourceTransferTikintag === $E` AND `destinationTransferTikintag === T`.
+ * Es el modelo "la empresa paga a sus usuarios por bono".
+ *
+ * Luego "los retiros de sus colaboradores" son los PAYOUT_BANK joineados
+ * cuya transacción origen tiene `empresa_id ∈ colaboradores($E)`.
+ *
+ * NO se aplica ventana de fecha — el cliente quiere ver el rooster vitalicio
+ * y la eficiencia agregada, no una porción.
+ *
+ * Pure.
+ */
+export function aggregateEmpresaCollaboratorStats(
+  empresaId: string,
+  transactions: Transaction[],
+  joinedPayouts: JoinedPayout[],
+): EmpresaCollaboratorStats {
+  // 1. Set de colaboradores de la empresa.
+  const collaborators = new Set<string>();
+  for (const t of transactions) {
+    if (t.tipo !== "BONUS") continue;
+    if (t.status !== "completed") continue;
+    if (t.sourceTransferTikintag !== empresaId) continue;
+    const receiver = t.destinationTransferTikintag;
+    if (!receiver) continue;
+    if (receiver === empresaId) continue;
+    collaborators.add(receiver);
+  }
+
+  // 2. Walk payouts; cuenta los que correspondan a tikintags en el set.
+  let bankWithdrawalsCount = 0;
+  let bankWithdrawalsTotal = 0;
+  let latencySum = 0;
+  let businessMinutesSum = 0;
+  let completedCount = 0;
+  for (const p of joinedPayouts) {
+    const tikintag = p.transaction?.empresa_id;
+    if (!tikintag) continue;
+    if (!collaborators.has(tikintag)) continue;
+    bankWithdrawalsCount += 1;
+    if (p.state === "completed" && Number.isFinite(p.latencySeconds)) {
+      latencySum += p.latencySeconds;
+      businessMinutesSum += payoutBusinessMinutes(p.fecha, p.latencySeconds);
+      bankWithdrawalsTotal += p.monto;
+      completedCount += 1;
+    }
+  }
+
+  // 3. Walk PURCHASE-out completed rows; aggregate por colaborador.
+  const cardUsers = new Set<string>();
+  let cardPurchasesCount = 0;
+  let cardPurchasesTotal = 0;
+  for (const t of transactions) {
+    if (t.tipo !== "PURCHASE") continue;
+    if (t.direction !== "out") continue;
+    if (t.status !== "completed") continue;
+    if (!collaborators.has(t.empresa_id)) continue;
+    cardUsers.add(t.empresa_id);
+    cardPurchasesCount += 1;
+    cardPurchasesTotal += Math.abs(t.monto);
+  }
+
+  return {
+    collaboratorCount: collaborators.size,
+    bankWithdrawalsCount,
+    bankWithdrawalsTotal,
+    bankWithdrawalsAvgTicket:
+      completedCount > 0 ? bankWithdrawalsTotal / completedCount : null,
+    avgPayoutMinutes:
+      completedCount > 0 ? latencySum / completedCount / 60 : null,
+    avgPayoutBusinessMinutes:
+      completedCount > 0 ? businessMinutesSum / completedCount : null,
+    cardUsersCount: cardUsers.size,
+    cardPurchasesCount,
+    cardPurchasesTotal,
+    cardPurchasesAvgTicket:
+      cardPurchasesCount > 0 ? cardPurchasesTotal / cardPurchasesCount : null,
   };
 }

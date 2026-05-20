@@ -39,6 +39,7 @@
  *     planned `aggregateByDestination` (tarjeta/banco binary).
  */
 
+import { payoutBusinessMinutes } from "@/lib/business-hours";
 import type { DashboardFilters } from "@/lib/url-state";
 
 import type { JoinedPayout } from "./join";
@@ -315,6 +316,14 @@ export interface AgingAlertRow {
    * meaningful and they are excluded by `aggregateAgingAlertPending` upstream.
    */
   agingMinutes: number;
+  /**
+   * Aging en MINUTOS HÁBILES (Bogotá, 08:00–18:00, L-V, sin festivos).
+   * Es lo que se compara directamente contra el SLA de 12h. Para rows
+   * iniciados hace muchos días pero con todo el wall-clock fuera de la
+   * ventana hábil (festivos / fines de semana), este valor puede ser
+   * MUCHO menor que `agingMinutes`.
+   */
+  agingBusinessMinutes: number;
 }
 
 /**
@@ -460,6 +469,46 @@ export function aggregateAverageProcessingMinutes(payouts: Payout[]): number {
 }
 
 /**
+ * Promedios de tiempo de procesamiento — versión enriquecida con minutos
+ * hábiles (para comparar contra el SLA de 12h hábiles de Tikin).
+ *
+ * Devuelve:
+ *   - `avgMinutes` = mismo cálculo que `aggregateAverageProcessingMinutes`
+ *     (tiempo wall-clock promedio).
+ *   - `avgBusinessMinutes` = promedio de los minutos hábiles individuales
+ *     (cada payout aplica la ventana 08:00–18:00 COT excluyendo fines de
+ *     semana y festivos via `payoutBusinessMinutes`). NO se puede derivar
+ *     dividiendo `avgMinutes` por nada — son medidas distintas.
+ *   - `count` = payouts completados (denominador común).
+ *
+ * Pure. O(n).
+ */
+export function aggregateProcessingTimeStats(payouts: Payout[]): {
+  avgMinutes: number;
+  avgBusinessMinutes: number;
+  count: number;
+} {
+  let count = 0;
+  let totalSeconds = 0;
+  let totalBusinessMinutes = 0;
+  for (const p of payouts) {
+    if (p.state !== "completed") continue;
+    if (!Number.isFinite(p.latencySeconds)) continue;
+    count += 1;
+    totalSeconds += p.latencySeconds;
+    totalBusinessMinutes += payoutBusinessMinutes(p.fecha, p.latencySeconds);
+  }
+  if (count === 0) {
+    return { avgMinutes: 0, avgBusinessMinutes: 0, count: 0 };
+  }
+  return {
+    avgMinutes: totalSeconds / count / 60,
+    avgBusinessMinutes: totalBusinessMinutes / count,
+    count,
+  };
+}
+
+/**
  * Filter the period-universe to in_progress payouts whose aging exceeds
  * the threshold (default 120 minutes = 2 hours per PAY-V2-04). For
  * in_progress rows `latencySeconds` equals `Aging` (Total Time is empty
@@ -489,6 +538,7 @@ export function aggregateAgingAlertPending(
       monto: p.monto,
       medium: p.medium,
       agingMinutes: p.latencySeconds / 60,
+      agingBusinessMinutes: payoutBusinessMinutes(p.fecha, p.latencySeconds),
     });
   }
   out.sort((a, b) => b.agingMinutes - a.agingMinutes);
@@ -609,6 +659,11 @@ export interface PayoutTimeByEmpresaRow {
   count: number;
   /** Average completion time in MINUTES across those completed payouts. */
   avgMinutes: number;
+  /**
+   * Promedio de minutos hábiles (08:00–18:00 COT, L-V, sin festivos) por
+   * payout completado de esta empresa. Para comparar contra el SLA de 12h.
+   */
+  avgBusinessMinutes: number;
 }
 
 /**
@@ -668,7 +723,10 @@ export function aggregatePayoutTimeByEmpresa(
   }
 
   // 2-3. Group completed payouts by attributed empresa.
-  const acc = new Map<string, { count: number; totalSeconds: number }>();
+  const acc = new Map<
+    string,
+    { count: number; totalSeconds: number; totalBusinessMinutes: number }
+  >();
   for (const j of joined) {
     if (j.state !== "completed") continue;
     if (!Number.isFinite(j.latencySeconds)) continue;
@@ -679,11 +737,15 @@ export function aggregatePayoutTimeByEmpresa(
     if (!empresa) continue;
     let cur = acc.get(empresa);
     if (!cur) {
-      cur = { count: 0, totalSeconds: 0 };
+      cur = { count: 0, totalSeconds: 0, totalBusinessMinutes: 0 };
       acc.set(empresa, cur);
     }
     cur.count += 1;
     cur.totalSeconds += j.latencySeconds;
+    cur.totalBusinessMinutes += payoutBusinessMinutes(
+      j.fecha,
+      j.latencySeconds,
+    );
   }
 
   // 4. Build rows + sort.
@@ -692,6 +754,7 @@ export function aggregatePayoutTimeByEmpresa(
       empresa,
       count: v.count,
       avgMinutes: v.totalSeconds / v.count / 60,
+      avgBusinessMinutes: v.totalBusinessMinutes / v.count,
     }),
   );
   rows.sort((a, b) => {

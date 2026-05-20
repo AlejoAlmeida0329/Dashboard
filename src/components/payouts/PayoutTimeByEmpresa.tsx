@@ -9,6 +9,7 @@
  * Sort: DESC por cantidad de payouts; tiebreak ASC por tiempo promedio.
  */
 
+import { SlaBadge } from "@/components/payouts/SlaBadge";
 import {
   Card,
   CardContent,
@@ -42,9 +43,10 @@ export function PayoutTimeByEmpresa({ rows }: Props) {
                   <th className="pb-2 pr-4 text-right font-medium tabular-nums">
                     Payouts
                   </th>
-                  <th className="pb-2 text-right font-medium tabular-nums">
-                    Tiempo promedio
+                  <th className="pb-2 pr-4 text-right font-medium tabular-nums">
+                    Tiempo promedio (Crudo)
                   </th>
+                  <th className="pb-2 font-medium">Tiempo promedio (Hábil)</th>
                 </tr>
               </thead>
               <tbody>
@@ -59,8 +61,11 @@ export function PayoutTimeByEmpresa({ rows }: Props) {
                     <td className="py-2 pr-4 text-right tabular-nums">
                       {formatInteger(r.count)}
                     </td>
-                    <td className="py-2 text-right tabular-nums">
+                    <td className="py-2 pr-4 text-right tabular-nums">
                       {formatMinutes(r.avgMinutes)}
+                    </td>
+                    <td className="py-2">
+                      <SlaBadge businessMinutes={r.avgBusinessMinutes} />
                     </td>
                   </tr>
                 ))}

@@ -89,20 +89,39 @@ export function InicioKPIStripV2({ summary }: Props) {
         </CardContent>
       </Card>
 
-      {/* 2. Volumen IN vs OUT — two stacked stats */}
+      {/* 2. Volumen IN vs OUT — side-by-side stats so cada label queda
+          pegado a su número (en lugar de label-arriba / valor-debajo que
+          confundía cuál era cuál). IN en verde (entra plata = buena
+          noticia), OUT neutro. */}
       <Card>
         <CardHeader>
           <CardDescription>Volumen IN vs OUT</CardDescription>
-          <CardTitle className="font-heading text-3xl tabular-nums text-foreground">
-            {formatCOP(summary.volumenIn)}
-          </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-xs text-muted-foreground">Entradas</p>
-          <p className="mt-1 text-base tabular-nums text-muted-foreground">
-            {formatCOP(summary.volumenOut)}
-          </p>
-          <p className="text-xs text-muted-foreground">Salidas</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Entradas
+              </p>
+              <p className="mt-1 font-heading text-2xl tabular-nums text-status-success">
+                {formatCOP(summary.volumenIn)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Recargas (PSE + Transfer)
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Salidas
+              </p>
+              <p className="mt-1 font-heading text-2xl tabular-nums text-foreground">
+                {formatCOP(summary.volumenOut)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Retiros a banco + compras tarjeta
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

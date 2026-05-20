@@ -105,6 +105,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // Plan 09-02 leaves
 import { BonosClienteCards } from "@/components/clientes/BonosClienteCards";
 import { ClienteKPIHeader } from "@/components/clientes/ClienteKPIHeader";
+import { ColaboradoresPayoutsCard } from "@/components/clientes/ColaboradoresPayoutsCard";
 import { ComprasClienteCard } from "@/components/clientes/ComprasClienteCard";
 import { GenerarVistaClienteButton } from "@/components/clientes/GenerarVistaClienteButton";
 import { P2PCards } from "@/components/clientes/P2PCards";
@@ -122,6 +123,7 @@ import {
   aggregateClienteTimeline,
   findClienteSummary,
 } from "@/lib/domain/cliente";
+import { aggregateEmpresaCollaboratorStats } from "@/lib/domain/clientes";
 import { getEmpresaRegistry } from "@/lib/domain/empresas";
 import { joinPayouts } from "@/lib/domain/join";
 
@@ -219,14 +221,21 @@ export default async function VistaClientePage({
   }
 
   // 5b. Single JOIN per request — threaded into timeline + RetirosBancoTable
-  //     narrowed prop. Plan 06-02 contract; do NOT re-run joinPayouts
-  //     elsewhere on this page.
+  //     narrowed prop + colaboradores stats. Plan 06-02 contract; do NOT
+  //     re-run joinPayouts elsewhere on this page.
   const joined = joinPayouts(allTx, allPayouts);
 
   // 5c. Narrow the JOIN result for the table — keeps `transaction.empresa_id`
   //     match in scope; preserves matched Transaction context for each row.
   const clientPayouts = joined.filter(
     (p) => p.transaction?.empresa_id === empresaId,
+  );
+
+  // 5c-bis. Colaboradores + sus payouts (Vista Cliente KPI card).
+  const collaboratorStats = aggregateEmpresaCollaboratorStats(
+    empresaId,
+    allTx,
+    joined,
   );
 
   // 5d. Bonos in/out split for THIS tikintag.
@@ -273,6 +282,8 @@ export default async function VistaClientePage({
       </div>
 
       <P2PCards p2p={p2p} />
+
+      <ColaboradoresPayoutsCard stats={collaboratorStats} />
 
       <RetirosBancoTable payouts={clientPayouts} />
 
