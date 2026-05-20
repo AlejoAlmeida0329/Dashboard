@@ -104,26 +104,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 // Plan 09-02 leaves
 import { BonosClienteCards } from "@/components/clientes/BonosClienteCards";
+import { BonosPorFechaTable } from "@/components/clientes/BonosPorFechaTable";
 import { ClienteKPIHeader } from "@/components/clientes/ClienteKPIHeader";
 import { ColaboradoresPayoutsCard } from "@/components/clientes/ColaboradoresPayoutsCard";
 import { ComprasClienteCard } from "@/components/clientes/ComprasClienteCard";
 import { GenerarVistaClienteButton } from "@/components/clientes/GenerarVistaClienteButton";
 import { P2PCards } from "@/components/clientes/P2PCards";
-import { RetirosBancoTable } from "@/components/clientes/RetirosBancoTable";
 import { TikintagSelector } from "@/components/clientes/TikintagSelector";
-import { TimelineActivity } from "@/components/clientes/TimelineActivity";
-import { UltimasP2PTable } from "@/components/clientes/UltimasP2PTable";
-import { UltimosBonosTable } from "@/components/clientes/UltimosBonosTable";
 
 // Domain
 import { filterBonosV2, summarizeBonosV2 } from "@/lib/domain/bonos";
 import { filterPurchases, summarizePurchases } from "@/lib/domain/cardUsage";
 import {
   aggregateClienteP2P,
-  aggregateClienteTimeline,
   findClienteSummary,
 } from "@/lib/domain/cliente";
-import { aggregateEmpresaCollaboratorStats } from "@/lib/domain/clientes";
+import {
+  aggregateBonosEmitidosPorFecha,
+  aggregateEmpresaCollaboratorStats,
+} from "@/lib/domain/clientes";
 import { getEmpresaRegistry } from "@/lib/domain/empresas";
 import { joinPayouts } from "@/lib/domain/join";
 
@@ -220,23 +219,19 @@ export default async function VistaClientePage({
     );
   }
 
-  // 5b. Single JOIN per request — threaded into timeline + RetirosBancoTable
-  //     narrowed prop + colaboradores stats. Plan 06-02 contract; do NOT
-  //     re-run joinPayouts elsewhere on this page.
+  // 5b. Single JOIN per request — alimenta ColaboradoresPayoutsCard.
+  //     Plan 06-02 contract; do NOT re-run joinPayouts elsewhere.
   const joined = joinPayouts(allTx, allPayouts);
 
-  // 5c. Narrow the JOIN result for the table — keeps `transaction.empresa_id`
-  //     match in scope; preserves matched Transaction context for each row.
-  const clientPayouts = joined.filter(
-    (p) => p.transaction?.empresa_id === empresaId,
-  );
-
-  // 5c-bis. Colaboradores + sus payouts (Vista Cliente KPI card).
+  // 5c. Colaboradores + sus payouts + compras tarjeta (lifetime).
   const collaboratorStats = aggregateEmpresaCollaboratorStats(
     empresaId,
     allTx,
     joined,
   );
+
+  // 5c-bis. Bonos emitidos agrupados por fecha Bogotá (lifetime).
+  const bonosPorFechaRows = aggregateBonosEmitidosPorFecha(allTx, empresaId);
 
   // 5d. Bonos in/out split for THIS tikintag.
   const bonosFiltered = filterBonosV2(allTx, tikintagFilters);
@@ -248,14 +243,6 @@ export default async function VistaClientePage({
   // 5f. Compras (PURCHASE direction='out') for THIS tikintag.
   const purchasesFiltered = filterPurchases(allTx, tikintagFilters);
   const purchasesSummary = summarizePurchases(purchasesFiltered);
-
-  // 5g. Timeline events: chronological feed across all tx + payouts.
-  const timelineEvents = aggregateClienteTimeline(
-    allTx,
-    joined,
-    empresaId,
-    filters,
-  );
 
   // 5h. Tikintag selector options — derived from the same registry the
   //     DashboardHeader's EmpresaFilter consumes (235 entries today).
@@ -285,15 +272,7 @@ export default async function VistaClientePage({
 
       <ColaboradoresPayoutsCard stats={collaboratorStats} />
 
-      <RetirosBancoTable payouts={clientPayouts} />
-
-      <UltimasP2PTable rows={p2p.rows} />
-
-      <UltimosBonosTable transactions={bonosFiltered} />
-
-      <div data-presenter-hide>
-        <TimelineActivity events={timelineEvents} />
-      </div>
+      <BonosPorFechaTable rows={bonosPorFechaRows} />
 
       <div className="flex justify-end" data-presenter-hide>
         <GenerarVistaClienteButton empresaId={empresaId} />

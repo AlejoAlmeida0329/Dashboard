@@ -1,12 +1,12 @@
 /**
  * ColaboradoresPayoutsCard — KPIs "tus colaboradores" para el dossier
- * Vista Cliente.
+ * Vista Cliente, partida en 3 secciones con dividers:
  *
- * Lifetime (sin ventana de fecha). Tres bloques dentro de la card:
- *   1. Usuarios — colaboradores totales (recibieron bonos de la empresa)
- *   2. Retiros a banco — cantidad, monto total, ticket promedio,
- *      tiempo promedio (Hábil) hero con SLA semáforo + crudo en caption
- *   3. Compras con tarjeta — usuarios distintos, cantidad, monto, ticket
+ *   1. Usuarios — 3 stats: con bonos · con retiros · con compras
+ *   2. Retiros a banco — cantidad, monto, ticket, tiempo (Hábil) + bancos
+ *   3. Compras con tarjeta — usuarios, monto, ticket
+ *
+ * Lifetime (sin ventana de fecha).
  */
 
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   SLA_BUSINESS_MINUTES,
   slaStatus,
@@ -29,25 +30,61 @@ type Props = {
   stats: EmpresaCollaboratorStats;
 };
 
+/** Title-case the bank code: `bancolombia` → `Bancolombia`, `nu_bank` → `Nu Bank`. */
+function displayBank(code: string): string {
+  if (!code || code === "OTRO_MEDIUM") return "Sin medio";
+  return code
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export function ColaboradoresPayoutsCard({ stats }: Props) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Tus colaboradores</CardTitle>
         <CardDescription>
-          Vista vitalicia: usuarios que recibieron bonos tuyos, sus retiros a
-          banco y sus compras con tarjeta
+          Vista vitalicia: usuarios que recibieron bonos tuyos y su
+          actividad downstream (retiros a banco + compras con tarjeta)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Header: usuarios totales */}
-        <Stat
-          label="Usuarios"
-          value={formatInteger(stats.collaboratorCount)}
-          subText="Tikintags distintos que recibieron tus bonos"
-        />
+        {/* Sección 1 — Usuarios */}
+        <section>
+          <h3 className="mb-3 text-sm font-semibold text-foreground">
+            Usuarios
+          </h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Stat
+              label="Con bonos recibidos"
+              value={formatInteger(stats.collaboratorCount)}
+              subText="Tikintags distintos que recibieron tus bonos"
+            />
+            <Stat
+              label="Con retiros a banco"
+              value={
+                stats.usersWithBankWithdrawalsCount > 0
+                  ? formatInteger(stats.usersWithBankWithdrawalsCount)
+                  : "—"
+              }
+              subText={`De ${formatInteger(stats.collaboratorCount)} colaboradores`}
+            />
+            <Stat
+              label="Con compras tarjeta"
+              value={
+                stats.cardUsersCount > 0
+                  ? formatInteger(stats.cardUsersCount)
+                  : "—"
+              }
+              subText={`De ${formatInteger(stats.collaboratorCount)} colaboradores`}
+            />
+          </div>
+        </section>
 
-        {/* Sección 1 — Retiros a banco */}
+        <Separator />
+
+        {/* Sección 2 — Retiros a banco */}
         <section>
           <h3 className="mb-3 text-sm font-semibold text-foreground">
             Retiros a banco
@@ -110,22 +147,46 @@ export function ColaboradoresPayoutsCard({ stats }: Props) {
               </p>
             </div>
           </div>
+
+          {/* Bancos donde retiran */}
+          {stats.banksBreakdown.length > 0 ? (
+            <div className="mt-4">
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Bancos donde retiran
+              </p>
+              <ul className="flex flex-wrap gap-2">
+                {stats.banksBreakdown.map((b) => (
+                  <li
+                    key={b.bank}
+                    className="inline-flex items-center gap-1 rounded border bg-muted/40 px-2 py-1 text-xs"
+                  >
+                    <span>{displayBank(b.bank)}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {formatInteger(b.count)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
-        {/* Sección 2 — Compras con tarjeta */}
+        <Separator />
+
+        {/* Sección 3 — Compras con tarjeta */}
         <section>
           <h3 className="mb-3 text-sm font-semibold text-foreground">
             Compras con tarjeta
           </h3>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Stat
-              label="Usuarios con compras"
+              label="Cantidad"
               value={
-                stats.cardUsersCount > 0
-                  ? formatInteger(stats.cardUsersCount)
+                stats.cardPurchasesCount > 0
+                  ? formatInteger(stats.cardPurchasesCount)
                   : "—"
               }
-              subText={`De ${formatInteger(stats.collaboratorCount)} colaboradores`}
+              subText="Compras completadas"
             />
             <Stat
               label="Monto total"
@@ -134,11 +195,7 @@ export function ColaboradoresPayoutsCard({ stats }: Props) {
                   ? formatCOP(stats.cardPurchasesTotal)
                   : "—"
               }
-              subText={
-                stats.cardPurchasesCount > 0
-                  ? `${formatInteger(stats.cardPurchasesCount)} compras completadas`
-                  : "Sin compras"
-              }
+              subText="Suma de compras completadas"
             />
             <Stat
               label="Ticket promedio"

@@ -298,6 +298,11 @@ export interface EmpresaCollaboratorStats {
    */
   collaboratorCount: number;
   /**
+   * Distinct collaborators con al menos un PAYOUT_BANK (cualquier estado)
+   * atribuido a su tikintag.
+   */
+  usersWithBankWithdrawalsCount: number;
+  /**
    * Conteo de PAYOUT_BANK (JoinedPayout) cuya `transaction.empresa_id`
    * pertenece al set de colaboradores de la empresa. Incluye TODOS los
    * estados (completed/in_progress/failed).
@@ -347,6 +352,26 @@ export interface EmpresaCollaboratorStats {
    * `null` cuando no hay compras.
    */
   cardPurchasesAvgTicket: number | null;
+  /**
+   * Breakdown de bancos donde retiran los colaboradores. Cada entry trae
+   * el código `Payout.medium` (lowercased upstream) y la cantidad de
+   * retiros sobre TODOS los estados — un retiro fallido a Bancolombia
+   * sigue siendo evidencia de que ese banco se usa. Ordenado DESC por
+   * count; tie-break alfabético.
+   */
+  banksBreakdown: { bank: string; count: number }[];
+}
+
+/** Fila de bonos emitidos agrupados por fecha (Bogotá). */
+export interface BonosEmitidosPorFechaRow {
+  /** `YYYY-MM-DD` Bogotá date. */
+  fecha: string;
+  /** Conteo de bonos emitidos en esa fecha. */
+  bonosCount: number;
+  /** Distinct colaboradores receptores en esa fecha. */
+  colaboradoresCount: number;
+  /** Suma de `Math.abs(monto)` (COP) de esos bonos. */
+  montoTotal: number;
 }
 
 /**
@@ -389,11 +414,16 @@ export function aggregateEmpresaCollaboratorStats(
   let latencySum = 0;
   let businessMinutesSum = 0;
   let completedCount = 0;
+  const usersWithWithdrawals = new Set<string>();
+  const bankCounts = new Map<string, number>();
   for (const p of joinedPayouts) {
     const tikintag = p.transaction?.empresa_id;
     if (!tikintag) continue;
     if (!collaborators.has(tikintag)) continue;
     bankWithdrawalsCount += 1;
+    usersWithWithdrawals.add(tikintag);
+    const bank = p.medium || "OTRO_MEDIUM";
+    bankCounts.set(bank, (bankCounts.get(bank) ?? 0) + 1);
     if (p.state === "completed" && Number.isFinite(p.latencySeconds)) {
       latencySum += p.latencySeconds;
       businessMinutesSum += payoutBusinessMinutes(p.fecha, p.latencySeconds);
@@ -401,6 +431,11 @@ export function aggregateEmpresaCollaboratorStats(
       completedCount += 1;
     }
   }
+  const banksBreakdown = Array.from(bankCounts.entries())
+    .map(([bank, count]) => ({ bank, count }))
+    .sort((a, b) =>
+      b.count !== a.count ? b.count - a.count : a.bank.localeCompare(b.bank),
+    );
 
   // 3. Walk PURCHASE-out completed rows; aggregate por colaborador.
   const cardUsers = new Set<string>();
@@ -418,6 +453,7 @@ export function aggregateEmpresaCollaboratorStats(
 
   return {
     collaboratorCount: collaborators.size,
+    usersWithBankWithdrawalsCount: usersWithWithdrawals.size,
     bankWithdrawalsCount,
     bankWithdrawalsTotal,
     bankWithdrawalsAvgTicket:
@@ -431,5 +467,76 @@ export function aggregateEmpresaCollaboratorStats(
     cardPurchasesTotal,
     cardPurchasesAvgTicket:
       cardPurchasesCount > 0 ? cardPurchasesTotal / cardPurchasesCount : null,
+    banksBreakdown,
   };
+}
+
+/**
+ * Agrega los BONUS-out emitidos por la empresa, agrupados por fecha Bogotá.
+ *
+ * Filtro: `tipo === 'BONUS'` AND `sourceTransferTikintag === empresaId` AND
+ * `status === 'completed'`. Es la misma definición de "colaboradores" que
+ * usa `aggregateEmpresaCollaboratorStats` — los receptores aquí son los
+ * mismos colaboradores que se cuentan allá.
+ *
+ * Cada row trae:
+ *   - `bonosCount` — cantidad de bonos en esa fecha
+ *   - `colaboradoresCount` — distintos receptores en esa fecha
+ *   - `montoTotal` — suma absoluta de monto
+ *
+ * Sin ventana de fecha (lifetime). Ordenado DESC por fecha (más reciente
+ * primero — para paginación 10 por página, el cliente quiere ver lo
+ * último arriba).
+ *
+ * Pure.
+ */
+export function aggregateBonosEmitidosPorFecha(
+  transactions: Transaction[],
+  empresaId: string,
+): BonosEmitidosPorFechaRow[] {
+  type Acc = {
+    fecha: string;
+    bonosCount: number;
+    receivers: Set<string>;
+    montoTotal: number;
+  };
+  const byDate = new Map<string, Acc>();
+  for (const t of transactions) {
+    if (t.tipo !== "BONUS") continue;
+    if (t.status !== "completed") continue;
+    if (t.sourceTransferTikintag !== empresaId) continue;
+    const receiver = t.destinationTransferTikintag;
+    if (!receiver) continue;
+    const fecha = bogotaDateKey(t.fecha);
+    let acc = byDate.get(fecha);
+    if (!acc) {
+      acc = {
+        fecha,
+        bonosCount: 0,
+        receivers: new Set<string>(),
+        montoTotal: 0,
+      };
+      byDate.set(fecha, acc);
+    }
+    acc.bonosCount += 1;
+    acc.receivers.add(receiver);
+    acc.montoTotal += Math.abs(t.monto);
+  }
+  return Array.from(byDate.values())
+    .map((a) => ({
+      fecha: a.fecha,
+      bonosCount: a.bonosCount,
+      colaboradoresCount: a.receivers.size,
+      montoTotal: a.montoTotal,
+    }))
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
+}
+
+/** Format `Date` → `YYYY-MM-DD` en Bogotá (UTC-5). */
+function bogotaDateKey(d: Date): string {
+  const shifted = new Date(d.getTime() + -5 * 60 * 60 * 1000);
+  const y = shifted.getUTCFullYear();
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
