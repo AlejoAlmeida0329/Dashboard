@@ -92,6 +92,41 @@ const OptionalString = z
     return trimmed.length === 0 ? undefined : trimmed;
   });
 
+/**
+ * Tikintag-bearing optional column.
+ *
+ * Algunas celdas en BD_Plataforma (e.g. `source_transfer_tikintag`,
+ * `destination_transfer_tikintag`) almacenan el username completo con
+ * `$` prefix (`$skala`, `$8128`). Para tikintags como `$8128` que son
+ * sólo dígitos, Google Sheets aplica formato currency a la celda
+ * (`$8.128` con `.` como separador de miles) y `UNFORMATTED_VALUE` los
+ * devuelve como NÚMERO `8128`, perdiendo el `$` y el contexto de que
+ * era una identidad de usuario.
+ *
+ * Este schema detecta ese caso (input es number) y reconstruye el `$`
+ * prefix. Para inputs string respeta el valor tal cual (preserva phone
+ * format `573...` y `+573...` sin tocar).
+ */
+const TikintagOptional = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
+  .transform((v) => {
+    if (v === null || v === undefined) return undefined;
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return undefined;
+      const s = String(v);
+      // Heurística para distinguir un username `$8128` (4 dígitos, Sheets le
+      // aplicó formato currency y perdimos el `$`) de un phone-tikintag
+      // (10+ dígitos, también puede venir como número si el Sheet no lo
+      // formateó como texto). Los `$username` numéricos en producción son
+      // cortos (4-6 dígitos típicamente); los phones colombianos son 10-12
+      // dígitos. Length < 10 → reconstruimos el `$`. ≥10 → preservamos
+      // como phone-format raw.
+      return s.length < 10 ? `$${s}` : s;
+    }
+    const trimmed = v.trim();
+    return trimmed.length === 0 ? undefined : trimmed;
+  });
+
 /** Currency-amount field. Accepts the wide COP range; rejects NaN/Infinity. */
 const Money = z.coerce.number().finite().min(-1e12).max(1e12);
 
@@ -124,7 +159,19 @@ export const TransactionRowSchema = z
     // 8 production rows have a numeric-looking tikintag that the Sheets
     // API returns as a number (UNFORMATTED_VALUE behavior). z.coerce.string
     // converts via String(); .min(1) still rejects truly empty cells.
-    tikintag: z.coerce.string().min(1),
+    // tikintag: same currency-format issue como source/destination. Aplica
+    // la misma heurística por longitud: <10 dígitos → reconstruye `$`,
+    // ≥10 → preserva (phone format crudo).
+    tikintag: z
+      .union([z.string(), z.number()])
+      .transform((v) => {
+        if (typeof v === "number") {
+          const s = String(v);
+          return s.length < 10 ? `$${s}` : s;
+        }
+        return v;
+      })
+      .pipe(z.string().min(1)),
     account_id: z.coerce.string().min(1),
     direction: z.string().transform((s): TransactionDirection => {
       const norm = s.trim().toLowerCase();
@@ -166,8 +213,8 @@ export const TransactionRowSchema = z
     balance_frozen: OptionalString,
     balance_currency: OptionalString,
     balance_pocket: OptionalString,
-    source_transfer_tikintag: OptionalString,
-    destination_transfer_tikintag: OptionalString,
+    source_transfer_tikintag: TikintagOptional,
+    destination_transfer_tikintag: TikintagOptional,
     source_bank: OptionalString,
     batch_reference: OptionalString,
     pocket_name: OptionalString,

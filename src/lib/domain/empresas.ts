@@ -58,6 +58,10 @@ export function getEmpresaRegistry(transactions: Transaction[]): EmpresaOption[]
   for (const t of transactions) {
     const id = t.empresa_id;
     if (!id || id.trim().length === 0) continue;
+    // Sólo $username; phone-format son la primera tx pre-registro del
+    // mismo usuario (backend 2026-05-21) — incluirlas listaría fantasmas
+    // en filtros y dropdowns.
+    if (!id.startsWith("$")) continue;
     if (!seen.has(id)) {
       seen.set(id, t.empresa_nombre || id);
     }

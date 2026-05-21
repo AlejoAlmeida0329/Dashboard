@@ -360,17 +360,21 @@ export function summarizeInicioV2(
   const filteredTikintagSet = new Set<string>();
 
   for (const t of filteredRows) {
-    if (t.tikintag) filteredTikintagSet.add(t.tikintag);
-    // Inclusión de colaboradores SIN cuenta propia: los destinatarios de
-    // BONUS completados son usuarios "vivos" en el período aunque nunca
-    // hayan creado un row propio en BD_Plataforma (caso clásico: phone-
-    // tikintag que recibió un bono y aún no se registró con nickname).
-    // Sin esto el contador subestima la base real — el sumando de los
-    // colaboradores por empresa supera el "usuarios activos" del header.
+    // Sólo identidades $username cuentan como usuarios reales. Los tikintag
+    // con formato número de celular son la PRIMERA tx histórica de un
+    // usuario antes de crear su $username; como BD_Plataforma es inmutable,
+    // esa fila vieja sigue existiendo en paralelo a las nuevas con $username
+    // — contar ambas duplica al mismo usuario. Criterio confirmado por
+    // backend (2026-05-21): "usuarios activos = los que tengan formato
+    // $username".
+    if (t.tikintag && t.tikintag.startsWith("$")) {
+      filteredTikintagSet.add(t.tikintag);
+    }
     if (
       t.tipo === "BONUS" &&
       t.status === "completed" &&
-      t.destinationTransferTikintag
+      t.destinationTransferTikintag &&
+      t.destinationTransferTikintag.startsWith("$")
     ) {
       filteredTikintagSet.add(t.destinationTransferTikintag);
     }
@@ -396,17 +400,21 @@ export function summarizeInicioV2(
   const total = countCompleted + countFailed + countInProgress;
   const successRate = total > 0 ? countCompleted / total : 0;
 
-  // Full-pool denominator — DISTINCT tikintag across all transactions,
-  // sumando también destinatarios de BONUS completados (colaboradores sin
-  // cuenta propia). Sin esto, "usuariosTotal" subestima al universo real.
+  // Full-pool denominator — DISTINCT tikintag $username across todas las
+  // transacciones, sumando destinatarios de BONUS completados. Las identidades
+  // formato número-de-celular se descartan: son la primera tx de un usuario
+  // que después creó $username; contarlas duplica a la misma persona.
   const totalTikintagSet = new Set<string>();
   for (const t of allTx) {
     if (t.direction === "OTRO_DIRECTION") continue;
-    if (t.tikintag) totalTikintagSet.add(t.tikintag);
+    if (t.tikintag && t.tikintag.startsWith("$")) {
+      totalTikintagSet.add(t.tikintag);
+    }
     if (
       t.tipo === "BONUS" &&
       t.status === "completed" &&
-      t.destinationTransferTikintag
+      t.destinationTransferTikintag &&
+      t.destinationTransferTikintag.startsWith("$")
     ) {
       totalTikintagSet.add(t.destinationTransferTikintag);
     }
@@ -575,11 +583,15 @@ export function aggregateActivityByDateV2(
       acc = { tikintags: new Set<string>(), volumenIn: 0, volumenOut: 0 };
       byBucket.set(bucket, acc);
     }
-    if (t.tikintag) acc.tikintags.add(t.tikintag);
+    // Sólo $username; identidades phone-format duplican al mismo usuario.
+    if (t.tikintag && t.tikintag.startsWith("$")) {
+      acc.tikintags.add(t.tikintag);
+    }
     if (
       t.tipo === "BONUS" &&
       t.status === "completed" &&
-      t.destinationTransferTikintag
+      t.destinationTransferTikintag &&
+      t.destinationTransferTikintag.startsWith("$")
     ) {
       acc.tikintags.add(t.destinationTransferTikintag);
     }
@@ -623,11 +635,15 @@ export function aggregateActivityByWeekV2(
       acc = { tikintags: new Set<string>(), volumenIn: 0, volumenOut: 0 };
       byBucket.set(bucket, acc);
     }
-    if (t.tikintag) acc.tikintags.add(t.tikintag);
+    // Sólo $username; identidades phone-format duplican al mismo usuario.
+    if (t.tikintag && t.tikintag.startsWith("$")) {
+      acc.tikintags.add(t.tikintag);
+    }
     if (
       t.tipo === "BONUS" &&
       t.status === "completed" &&
-      t.destinationTransferTikintag
+      t.destinationTransferTikintag &&
+      t.destinationTransferTikintag.startsWith("$")
     ) {
       acc.tikintags.add(t.destinationTransferTikintag);
     }

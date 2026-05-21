@@ -208,6 +208,10 @@ export function deriveEmpresasIndex(
     if (!isActivityCounting(t)) continue;
     const id = t.empresa_id;
     if (!id || id.trim().length === 0) continue;
+    // Sólo identidades $username. Las phone-format son la primera tx
+    // pre-registro del mismo usuario y duplicarían la lista (backend
+    // 2026-05-21).
+    if (!id.startsWith("$")) continue;
 
     const ts = t.fecha.getTime();
     if (!Number.isFinite(ts)) continue;
@@ -396,7 +400,9 @@ export function aggregateEmpresaCollaboratorStats(
   transactions: Transaction[],
   joinedPayouts: JoinedPayout[],
 ): EmpresaCollaboratorStats {
-  // 1. Set de colaboradores de la empresa.
+  // 1. Set de colaboradores de la empresa. Sólo identidades $username
+  // cuentan — los formato número-celular son la primera tx de un usuario
+  // antes de crear su $username y duplicarían (backend 2026-05-21).
   const collaborators = new Set<string>();
   for (const t of transactions) {
     if (t.tipo !== "BONUS") continue;
@@ -404,6 +410,7 @@ export function aggregateEmpresaCollaboratorStats(
     if (t.sourceTransferTikintag !== empresaId) continue;
     const receiver = t.destinationTransferTikintag;
     if (!receiver) continue;
+    if (!receiver.startsWith("$")) continue;
     if (receiver === empresaId) continue;
     collaborators.add(receiver);
   }
@@ -507,6 +514,10 @@ export function aggregateBonosEmitidosPorFecha(
     if (t.sourceTransferTikintag !== empresaId) continue;
     const receiver = t.destinationTransferTikintag;
     if (!receiver) continue;
+    // Sólo $username; phone-format duplican al mismo usuario (backend
+    // 2026-05-21). El bono se cuenta igual, pero el receiver fantasma no
+    // infla `colaboradoresCount`.
+    const isRegistered = receiver.startsWith("$");
     const fecha = bogotaDateKey(t.fecha);
     let acc = byDate.get(fecha);
     if (!acc) {
@@ -519,7 +530,7 @@ export function aggregateBonosEmitidosPorFecha(
       byDate.set(fecha, acc);
     }
     acc.bonosCount += 1;
-    acc.receivers.add(receiver);
+    if (isRegistered) acc.receivers.add(receiver);
     acc.montoTotal += Math.abs(t.monto);
   }
   return Array.from(byDate.values())
