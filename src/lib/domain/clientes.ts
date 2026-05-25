@@ -512,12 +512,20 @@ export function aggregateBonosEmitidosPorFecha(
     if (t.tipo !== "BONUS") continue;
     if (t.status !== "completed") continue;
     if (t.sourceTransferTikintag !== empresaId) continue;
+    // Sólo el lado OUT (sender). BD_Plataforma genera 2 filas espejo
+    // por bono (sender direction='out' + receiver direction='in') y AMBAS
+    // tienen `sourceTransferTikintag === empresaId`. Sin este guard,
+    // `bonosCount` y `montoTotal` se duplican (bug verificado 2026-05-25
+    // contra $skala día 21-may: 32 filas match → reportaba 15/16 bonos pero
+    // monto doblado de $12.798.276 a $25.596.552).
+    if (t.direction !== "out") continue;
     const receiver = t.destinationTransferTikintag;
     if (!receiver) continue;
-    // Sólo $username; phone-format duplican al mismo usuario (backend
-    // 2026-05-21). El bono se cuenta igual, pero el receiver fantasma no
-    // infla `colaboradoresCount`.
-    const isRegistered = receiver.startsWith("$");
+    // `colaboradoresCount` cuenta TODOS los receivers distintos del día
+    // (cualquier formato — $username o phone). Decisión de producto
+    // 2026-05-25: aquí el cliente quiere "¿a cuántas personas distintas
+    // les pagué hoy?", no la versión deduplicada $-only que usa la card
+    // Tus Colaboradores para el rooster vitalicio.
     const fecha = bogotaDateKey(t.fecha);
     let acc = byDate.get(fecha);
     if (!acc) {
@@ -530,7 +538,7 @@ export function aggregateBonosEmitidosPorFecha(
       byDate.set(fecha, acc);
     }
     acc.bonosCount += 1;
-    if (isRegistered) acc.receivers.add(receiver);
+    acc.receivers.add(receiver);
     acc.montoTotal += Math.abs(t.monto);
   }
   return Array.from(byDate.values())
