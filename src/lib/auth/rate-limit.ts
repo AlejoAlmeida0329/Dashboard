@@ -41,6 +41,18 @@ function warnFailOpenOnce() {
   );
 }
 
+let limiterErrorWarned = false;
+function warnLimiterErrorOnce(err: unknown) {
+  if (limiterErrorWarned) return;
+  limiterErrorWarned = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[rate-limit] Upstash unreachable — failing open for login. " +
+      "Recreate the Redis DB and refresh UPSTASH_REDIS_REST_URL/_TOKEN.",
+    err,
+  );
+}
+
 function buildLimiter(): LoginLimiter {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -64,12 +76,22 @@ function buildLimiter(): LoginLimiter {
 
   return {
     async limit(ip: string): Promise<LimitResult> {
-      const res = await ratelimit.limit(ip);
-      return {
-        success: res.success,
-        remaining: res.remaining,
-        reset: res.reset,
-      };
+      try {
+        const res = await ratelimit.limit(ip);
+        return {
+          success: res.success,
+          remaining: res.remaining,
+          reset: res.reset,
+        };
+      } catch (err) {
+        // Fail-open on ANY runtime failure reaching Upstash (DNS NXDOMAIN,
+        // timeout, deleted DB, invalid token, network). The rate limiter
+        // must never be a single point of failure that blocks login — the
+        // login is still guarded by password + bcrypt. Losing the limit
+        // temporarily is the acceptable trade-off vs. locking everyone out.
+        warnLimiterErrorOnce(err);
+        return { success: true, remaining: Number.POSITIVE_INFINITY, reset: 0 };
+      }
     },
   };
 }
