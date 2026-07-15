@@ -559,3 +559,142 @@ function bogotaDateKey(d: Date): string {
   const dd = String(shifted.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
+
+// ============================================================================
+// Colaboradores no registrados (usuarios que recibieron bonos y nunca crearon
+// su $username)
+// ============================================================================
+
+/**
+ * Umbral de bonos para clasificar un celular como "no registrado con certeza".
+ *
+ * El PRIMER bono de todo usuario siempre se paga a su número celular — es la
+ * identidad inmutable antes de que cree su `$username` (backend 2026-05-21).
+ * Por eso un celular con UN solo bono es ambiguo: puede ser (a) alguien que
+ * nunca se registró, o (b) el primer bono de alguien que DESPUÉS se registró
+ * (sus bonos siguientes ya salen bajo su `$username`, otra identidad).
+ *
+ * Con ≥2 bonos la ambigüedad desaparece: si tuviera cuenta, el segundo bono
+ * habría ido al `$username`. Que sigan cayendo al celular prueba que al
+ * momento de esos pagos NO tenía cuenta. Ese es el criterio de negocio.
+ */
+const MIN_BONOS_NO_REGISTRADO = 2;
+
+/**
+ * Normaliza un teléfono colombiano a su número nacional de 10 dígitos para
+ * deduplicar el mismo celular escrito en formatos distintos.
+ *
+ * BD_Plataforma guarda el mismo número como `573106325908`, `+573106325908`,
+ * `+3106325908` o `3106325908` según cómo se capturó. Sin normalizar, el
+ * mismo usuario se contaría varias veces (y peor: sus 2 bonos se verían como
+ * "2 personas con 1 bono", rompiendo el umbral). Quita todo lo no-dígito y,
+ * si viene con código país (57 + 10 dígitos = 12), lo retira.
+ */
+function normalizePhone(raw: string): string {
+  let digits = raw.replace(/[^0-9]/g, "");
+  if (digits.length === 12 && digits.startsWith("57")) {
+    digits = digits.slice(2);
+  }
+  return digits;
+}
+
+/** Un colaborador no registrado: celular con ≥2 bonos que nunca creó `$username`. */
+export interface ColaboradorNoRegistrado {
+  /** Teléfono normalizado a 10 dígitos nacionales. */
+  telefono: string;
+  /** Cantidad de bonos que recibió esta persona (siempre ≥ MIN_BONOS_NO_REGISTRADO). */
+  bonosCount: number;
+}
+
+/** Resultado de `aggregateColaboradoresNoRegistrados`. */
+export interface ColaboradoresNoRegistrados {
+  /** Cantidad de colaboradores no registrados (celulares distintos con ≥2 bonos). */
+  count: number;
+  /**
+   * Celulares en formato número (no `$username`) que recibieron 1 solo bono.
+   * Ambiguos por diseño (podrían ser primeros-bonos de gente ya registrada) —
+   * NO se cuentan en `count`, pero se exponen para transparencia del denominador.
+   */
+  ambiguosCount: number;
+  /** Lista de no registrados, ordenada DESC por `bonosCount` (luego teléfono ASC). */
+  celulares: ColaboradorNoRegistrado[];
+}
+
+/**
+ * Identifica los colaboradores de una empresa que recibieron bonos pero NUNCA
+ * se registraron en la app (siguen en formato celular con ≥2 bonos).
+ *
+ * Método (dos pasos):
+ *
+ * PASO 1 — aprender qué celulares YA tienen cuenta. Cuando un usuario crea su
+ * `$username`, la columna `tikintag` (dueño del wallet) de sus filas
+ * `direction='in'` muestra ese `$username`, aunque el `destinationTransferTikintag`
+ * histórico siga guardando su número celular. En una fila `in`, `tikintag` y
+ * el destino son la MISMA persona (la que recibe), así que
+ * `número → $username` es un enlace válido = "este celular ya se registró".
+ * (En filas `out` el `tikintag` es el REMITENTE, no el receptor, y enlazaría
+ * mal — por eso sólo se aprende de filas `in`.)
+ *
+ * PASO 2 — contar bonos de la empresa (`tipo==='BONUS'` AND `status==='completed'`
+ * AND `direction==='out'` AND `sourceTransferTikintag===empresaId`) por receptor.
+ * Un receptor es NO registrado si su `destinationTransferTikintag` es formato
+ * celular (no `$`) Y ese número NO aparece en el mapa del Paso 1. Se agrupan
+ * por teléfono normalizado y se reportan quienes acumulan ≥ MIN_BONOS_NO_REGISTRADO.
+ *
+ * Sin ventana de fecha (lifetime). Pure. O(n) en dos pasadas.
+ */
+export function aggregateColaboradoresNoRegistrados(
+  transactions: Transaction[],
+  empresaId: string,
+): ColaboradoresNoRegistrados {
+  // PASO 1: celulares que ya se registraron (aparecen con `$username` como
+  // dueño del wallet en alguna fila `in`). Aprendido de TODA la plataforma —
+  // si el número recibió cualquier cosa en un wallet con `$username`, tiene
+  // cuenta, no sólo si fue un bono.
+  const celularesRegistrados = new Set<string>();
+  for (const t of transactions) {
+    if (t.direction !== "in") continue;
+    if (!t.tikintag.startsWith("$")) continue;
+    const dst = t.destinationTransferTikintag;
+    if (!dst || dst.startsWith("$")) continue;
+    const tel = normalizePhone(dst);
+    if (tel.length > 0) celularesRegistrados.add(tel);
+  }
+
+  // PASO 2: bonos-out de la empresa a receptores en formato celular que NO
+  // están en el set de registrados.
+  const bonosPorTelefono = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.tipo !== "BONUS") continue;
+    if (t.status !== "completed") continue;
+    if (t.direction !== "out") continue;
+    if (t.sourceTransferTikintag !== empresaId) continue;
+    const receiver = t.destinationTransferTikintag;
+    if (!receiver) continue;
+    // Sólo formato celular: los `$username` ya están registrados.
+    if (receiver.startsWith("$")) continue;
+    const telefono = normalizePhone(receiver);
+    if (telefono.length === 0) continue;
+    // Este celular ya creó cuenta (aparece con `$username` en filas `in`).
+    if (celularesRegistrados.has(telefono)) continue;
+    bonosPorTelefono.set(telefono, (bonosPorTelefono.get(telefono) ?? 0) + 1);
+  }
+
+  const celulares: ColaboradorNoRegistrado[] = [];
+  let ambiguosCount = 0;
+  for (const [telefono, bonosCount] of bonosPorTelefono) {
+    if (bonosCount >= MIN_BONOS_NO_REGISTRADO) {
+      celulares.push({ telefono, bonosCount });
+    } else {
+      ambiguosCount += 1;
+    }
+  }
+
+  celulares.sort((a, b) =>
+    b.bonosCount !== a.bonosCount
+      ? b.bonosCount - a.bonosCount
+      : a.telefono.localeCompare(b.telefono),
+  );
+
+  return { count: celulares.length, ambiguosCount, celulares };
+}

@@ -106,6 +106,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BonosClienteCards } from "@/components/clientes/BonosClienteCards";
 import { BonosPorFechaTable } from "@/components/clientes/BonosPorFechaTable";
 import { ClienteKPIHeader } from "@/components/clientes/ClienteKPIHeader";
+import { ColaboradoresNoRegistradosCard } from "@/components/clientes/ColaboradoresNoRegistradosCard";
 import { ColaboradoresPayoutsCard } from "@/components/clientes/ColaboradoresPayoutsCard";
 import { ComprasClienteCard } from "@/components/clientes/ComprasClienteCard";
 import { GenerarVistaClienteButton } from "@/components/clientes/GenerarVistaClienteButton";
@@ -122,6 +123,7 @@ import {
 } from "@/lib/domain/cliente";
 import {
   aggregateBonosEmitidosPorFecha,
+  aggregateColaboradoresNoRegistrados,
   aggregateEmpresaCollaboratorStats,
 } from "@/lib/domain/clientes";
 import { getEmpresaRegistry } from "@/lib/domain/empresas";
@@ -235,6 +237,10 @@ export default async function VistaClientePage({
   // 5c-bis. Bonos emitidos agrupados por fecha Bogotá (lifetime).
   const bonosPorFechaRows = aggregateBonosEmitidosPorFecha(allTx, empresaId);
 
+  // 5c-ter. Colaboradores que recibieron bonos y nunca se registraron
+  //         (celulares con ≥2 bonos, lifetime).
+  const noRegistrados = aggregateColaboradoresNoRegistrados(allTx, empresaId);
+
   // 5d. Bonos in/out split for THIS tikintag.
   const bonosFiltered = filterBonosV2(allTx, tikintagFilters);
   const bonosSummary = summarizeBonosV2(bonosFiltered);
@@ -280,6 +286,8 @@ export default async function VistaClientePage({
       </div>
 
       <ColaboradoresPayoutsCard stats={collaboratorStats} />
+
+      <ColaboradoresNoRegistradosCard data={noRegistrados} />
 
       <BonosPorFechaTable rows={bonosPorFechaRows} />
 
