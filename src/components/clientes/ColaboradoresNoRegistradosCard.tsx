@@ -42,8 +42,7 @@ export function ColaboradoresNoRegistradosCard({ data }: Props) {
       <CardHeader>
         <CardTitle>Colaboradores no registrados</CardTitle>
         <CardDescription>
-          Celulares que recibieron 2 o más bonos y nunca crearon su usuario en
-          la app
+          Colaboradores que no han creado cuenta en Tikin
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
