@@ -50,16 +50,7 @@ export function ColaboradoresNoRegistradosCard({ data }: Props) {
           <span className="text-4xl font-semibold tabular-nums">
             {formatInteger(data.count)}
           </span>
-          <span className="text-sm text-muted-foreground">
-            sin registrar
-            {data.ambiguosCount > 0 && (
-              <>
-                {" · "}
-                {formatInteger(data.ambiguosCount)} con 1 solo bono (ambiguos,
-                no contados)
-              </>
-            )}
-          </span>
+          <span className="text-sm text-muted-foreground">sin registrar</span>
         </div>
 
         {data.celulares.length === 0 ? (
